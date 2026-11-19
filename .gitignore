@@ -1,0 +1,19 @@
+# Oracle wallets and credentials - never commit
+Wallet_*/
+Wallet_*.zip
+*.sso
+*.p12
+*.jks
+tnsnames.ora
+sqlnet.ora
+.env
+
+# Keys and tunnel tokens
+*.pem
+*.key
+ngrok.yml
+
+# Local clutter
+*.log
+Thumbs.db
+desktop.ini
