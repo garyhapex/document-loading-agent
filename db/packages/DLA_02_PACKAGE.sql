@@ -8,6 +8,10 @@
    Run as      : ADMIN, SQL Developer, F5 (Run Script)
    Run after   : DLA_01_CREATE_TABLES.sql and
                  DLA_08_VALIDATION_COLUMNS.sql
+   11/20/2026  : EXTRACT_DOCUMENT built: the OCI Generative AI
+                 reader (Google Gemini 2.5 Flash on OCI, the PDF
+                 sent as a document, no relay). Settings it reads
+                 come from DLA_13_OCI_MODEL.sql.
    Note        : SUBMIT_DOCUMENT calls DLA_RELAY_PKG. On a brand
                  new install, where DLA_04_RELAY_DATABASE.sql has
                  not been run yet, the body shows a compile error
@@ -29,9 +33,8 @@ ALTER SESSION SET CURRENT_SCHEMA = WKSP_WKSPPRDWORKSPACE;
    Purpose      : The core package behind the Document Loading
                   Agent. Working: LOG_AUDIT, GET_SETTING,
                   SET_SETTING, SUBMIT_DOCUMENT, PARSE_EXTRACTION,
-                  VALIDATE_STAGING, PROCESS_STAGING, LOAD_INVOICE.
-                  EXTRACT_DOCUMENT (the OCI model) is still a
-                  placeholder that raises a clear error.
+                  VALIDATE_STAGING, PROCESS_STAGING, LOAD_INVOICE,
+                  and EXTRACT_DOCUMENT (the OCI model, 11/20/2026).
    ------------------------------------------------------------ */
 CREATE OR REPLACE PACKAGE dla_pkg AUTHID DEFINER AS
 
@@ -68,8 +71,15 @@ CREATE OR REPLACE PACKAGE dla_pkg AUTHID DEFINER AS
         p_model_code      IN VARCHAR2 DEFAULT NULL
     ) RETURN NUMBER;
 
-    /* Phase 2 placeholder: sends a document to the chosen model.
-       Will return the new EXTRACTION_ID. */
+    /* Working (11/20/2026): the second reader. Sends the document
+       straight from the database to OCI Generative AI (settings
+       OCI_MODEL, OCI_ENDPOINT, OCI_CREDENTIAL, OCI_COMPARTMENT_OCID),
+       stores the answer in DLA_EXTRACTIONS, then stages it and runs
+       the agent's decision exactly as the relay path does. Needs an
+       APEX session (the web credential), so it is called from the
+       Upload page, not from ORDS. Returns the new EXTRACTION_ID.
+       P_MODEL_CODE is accepted for symmetry; only OCI_GENAI is read
+       here. */
     FUNCTION extract_document (
         p_document_id  IN NUMBER,
         p_model_code   IN VARCHAR2 DEFAULT NULL
@@ -404,15 +414,312 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
     END submit_document;
 
     /* --------------------------------------------------------
-       Public  : EXTRACT_DOCUMENT  (Phase 2 placeholder)
+       Private : STRIP_FENCES
+       Purpose : Some models wrap JSON in a ```json ... ``` fence
+                 even when told not to. Returns the text inside.
+       -------------------------------------------------------- */
+    FUNCTION strip_fences (
+        p_text  IN CLOB
+    ) RETURN CLOB IS
+        l_text  CLOB;
+    BEGIN
+        IF p_text IS NULL THEN
+            RETURN NULL;
+        END IF;
+        /* Drop a leading ```json (or ```) line and a trailing ``` line,
+           then any white space around what is left. REGEXP_REPLACE
+           works on a CLOB; DBMS_LOB.INSTR cannot search backwards,
+           which is what went wrong on 11/20/2026. */
+        l_text := REGEXP_REPLACE(p_text, '^[[:space:]]*```[A-Za-z]*[[:space:]]*', '');
+        l_text := REGEXP_REPLACE(l_text, '[[:space:]]*```[[:space:]]*$', '');
+        RETURN TRIM(l_text);
+    END strip_fences;
+
+    /* --------------------------------------------------------
+       Public  : EXTRACT_DOCUMENT   (the OCI reader, 11/20/2026)
+       How     : One POST to the OCI Generative AI chat endpoint
+                 with APEX_WEB_SERVICE.MAKE_REST_REQUEST and the
+                 workspace web credential (OCI native signing).
+                 The request is the GENERIC chat format with two
+                 content parts: the instruction (TEXT) and the
+                 file itself (DOCUMENT for a PDF, IMAGE for a
+                 picture), both inline as base64. Built the same
+                 way as the proven call in Gary's label platform
+                 (PKG_IMAGINARY_SPEC_READ), with one retry when
+                 Oracle's side answers 429 or 5xx.
+       Then    : the answer is stored on a new DLA_EXTRACTIONS
+                 row (SUCCESS or ERROR), the document status is
+                 set, and on success PARSE_EXTRACTION and
+                 PROCESS_STAGING run under savepoints, exactly
+                 as DLA_RELAY_PKG.RECEIVE_RESULT does, so the two
+                 readers end in the same place: loaded, or
+                 waiting for a person.
+       Raises  : ORA-20099 if the OCI settings are missing or
+                 the document is not a PDF, PNG or JPG. Any
+                 failure after the extraction row exists is
+                 recorded on that row, not raised, so the page
+                 shows a red row instead of an error.
        -------------------------------------------------------- */
     FUNCTION extract_document (
         p_document_id  IN NUMBER,
         p_model_code   IN VARCHAR2 DEFAULT NULL
     ) RETURN NUMBER IS
+        l_model          dla_settings.setting_value%TYPE;
+        l_endpoint       dla_settings.setting_value%TYPE;
+        l_credential     dla_settings.setting_value%TYPE;
+        l_compartment    dla_settings.setting_value%TYPE;
+        l_prompt         dla_settings.setting_value%TYPE;
+        l_file_name      dla_documents.file_name%TYPE;
+        l_mime           dla_documents.mime_type%TYPE;
+        l_blob           dla_documents.file_blob%TYPE;
+        l_extraction_id  dla_extractions.extraction_id%TYPE;
+        l_started        TIMESTAMP;
+        l_elapsed_ms     NUMBER;
+        l_body           JSON_OBJECT_T;
+        l_srv            JSON_OBJECT_T;
+        l_req            JSON_OBJECT_T;
+        l_msgs           JSON_ARRAY_T;
+        l_msg            JSON_OBJECT_T;
+        l_cont           JSON_ARRAY_T;
+        l_txt            JSON_OBJECT_T;
+        l_file           JSON_OBJECT_T;
+        l_url_obj        JSON_OBJECT_T;
+        l_data_url       CLOB;
+        l_resp           CLOB;
+        l_answer         CLOB;
+        l_status         NUMBER;
+        l_error          VARCHAR2(4000);
+        l_stg_header     NUMBER;
+        l_invoice_id     NUMBER;
+        l_flag_count     NUMBER;
+        l_is_json        NUMBER := 0;
     BEGIN
-        not_built_yet('EXTRACT_DOCUMENT', 'Phase 2');
-        RETURN NULL;
+        l_model       := get_setting('OCI_MODEL');
+        l_endpoint    := get_setting('OCI_ENDPOINT');
+        l_credential  := get_setting('OCI_CREDENTIAL');
+        l_compartment := get_setting('OCI_COMPARTMENT_OCID');
+        l_prompt      := get_setting('EXTRACTION_PROMPT');
+
+        IF l_model IS NULL OR l_endpoint IS NULL OR l_credential IS NULL
+           OR l_compartment IS NULL OR l_prompt IS NULL THEN
+            RAISE_APPLICATION_ERROR(
+                -20099,
+                'DLA_PKG.EXTRACT_DOCUMENT: the OCI settings are missing. Run db\data\DLA_13_OCI_MODEL.sql.'
+            );
+        END IF;
+
+        BEGIN
+            SELECT d.file_name,
+                   LOWER(d.mime_type),
+                   d.file_blob
+            INTO   l_file_name,
+                   l_mime,
+                   l_blob
+            FROM   dla_documents d
+            WHERE  d.document_id = p_document_id;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(
+                    -20099,
+                    'DLA_PKG.EXTRACT_DOCUMENT: there is no document ' || p_document_id || '.'
+                );
+        END;
+
+        IF l_mime NOT IN ('application/pdf', 'image/png', 'image/jpeg') THEN
+            RAISE_APPLICATION_ERROR(
+                -20099,
+                'DLA_PKG.EXTRACT_DOCUMENT: only PDF, PNG and JPG are read. This file is ' || l_mime || '.'
+            );
+        END IF;
+
+        /* The extraction row exists before the call, so a slow or
+           failed call still leaves a trace the page can show. */
+        INSERT INTO dla_extractions (
+            document_id,
+            model_code,
+            model_name,
+            status
+        ) VALUES (
+            p_document_id,
+            c_model_oci,
+            l_model,
+            'RUNNING'
+        )
+        RETURNING extraction_id INTO l_extraction_id;
+
+        log_audit(
+            p_action      => 'EXTRACTION_STARTED',
+            p_details     => 'Extraction ' || l_extraction_id || ' sent to ' || l_model || ' on OCI.',
+            p_document_id => p_document_id
+        );
+
+        l_started := SYSTIMESTAMP;
+
+        /* The request. One user message with two parts. */
+        l_data_url := 'data:' || l_mime || ';base64,'
+                      || REPLACE(REPLACE(APEX_WEB_SERVICE.BLOB2CLOBBASE64(
+                             p_blob => l_blob, p_newlines => 'N', p_padding => 'N'),
+                         CHR(10), ''), CHR(13), '');
+
+        l_txt := JSON_OBJECT_T();
+        l_txt.put('type', 'TEXT');
+        l_txt.put('text', l_prompt);
+
+        l_url_obj := JSON_OBJECT_T();
+        l_url_obj.put('url', l_data_url);
+
+        l_file := JSON_OBJECT_T();
+        IF l_mime = 'application/pdf' THEN
+            l_file.put('type', 'DOCUMENT');
+            l_file.put('documentUrl', l_url_obj);
+        ELSE
+            l_file.put('type', 'IMAGE');
+            l_file.put('imageUrl', l_url_obj);
+        END IF;
+
+        l_cont := JSON_ARRAY_T();
+        l_cont.append(l_txt);
+        l_cont.append(l_file);
+
+        l_msg := JSON_OBJECT_T();
+        l_msg.put('role', 'USER');
+        l_msg.put('content', l_cont);
+
+        l_msgs := JSON_ARRAY_T();
+        l_msgs.append(l_msg);
+
+        l_req := JSON_OBJECT_T();
+        l_req.put('apiFormat', 'GENERIC');
+        l_req.put('messages', l_msgs);
+        l_req.put('maxTokens', 4000);
+        l_req.put('temperature', 0);
+
+        l_srv := JSON_OBJECT_T();
+        l_srv.put('servingType', 'ON_DEMAND');
+        l_srv.put('modelId', l_model);
+
+        l_body := JSON_OBJECT_T();
+        l_body.put('compartmentId', l_compartment);
+        l_body.put('servingMode', l_srv);
+        l_body.put('chatRequest', l_req);
+
+        /* The call, tried twice when Oracle's side is busy. */
+        BEGIN
+            FOR l_try IN 1 .. 2 LOOP
+                APEX_WEB_SERVICE.SET_REQUEST_HEADERS(p_name_01 => 'Content-Type', p_value_01 => 'application/json');
+                l_resp := APEX_WEB_SERVICE.MAKE_REST_REQUEST(
+                              p_http_method          => 'POST',
+                              p_url                  => l_endpoint,
+                              p_credential_static_id => l_credential,
+                              p_body                 => l_body.to_clob,
+                              p_transfer_timeout     => 170);
+                l_status := APEX_WEB_SERVICE.G_STATUS_CODE;
+                EXIT WHEN l_status = 200;
+                EXIT WHEN l_try = 2 OR l_status NOT IN (429, 500, 502, 503, 504);
+                DBMS_SESSION.SLEEP(5);
+            END LOOP;
+        EXCEPTION
+            WHEN OTHERS THEN
+                l_status := -1;
+                l_error  := SQLERRM;
+        END;
+
+        l_elapsed_ms := ROUND(EXTRACT(SECOND FROM (SYSTIMESTAMP - l_started)) * 1000
+                        + EXTRACT(MINUTE FROM (SYSTIMESTAMP - l_started)) * 60000
+                        + EXTRACT(HOUR   FROM (SYSTIMESTAMP - l_started)) * 3600000);
+
+        IF l_status = 200 THEN
+            /* The answer text: every text part of the first choice. */
+            FOR t IN (SELECT j.txt
+                      FROM   JSON_TABLE(l_resp, '$.chatResponse.choices[0].message.content[*]'
+                                 COLUMNS (txt CLOB PATH '$.text')) j) LOOP
+                l_answer := l_answer || t.txt;
+            END LOOP;
+            l_answer := strip_fences(l_answer);
+
+            /* IS JSON is a SQL condition, not PL/SQL, hence the query. */
+            IF l_answer IS NULL THEN
+                l_is_json := 0;
+            ELSE
+                SELECT CASE WHEN l_answer IS JSON THEN 1 ELSE 0 END
+                INTO   l_is_json
+                FROM   dual;
+            END IF;
+
+            IF l_is_json = 0 THEN
+                l_error := 'The model answered, but the answer is not valid JSON.';
+            END IF;
+        ELSIF l_status > 0 THEN
+            l_error := 'OCI Generative AI answered HTTP ' || l_status || ': '
+                       || SUBSTR(DBMS_LOB.SUBSTR(l_resp, 600, 1), 1, 600);
+        ELSE
+            l_error := 'The call to OCI Generative AI failed: ' || l_error;
+        END IF;
+
+        IF l_error IS NULL THEN
+            UPDATE dla_extractions e
+            SET    e.status         = 'SUCCESS',
+                   e.elapsed_ms     = l_elapsed_ms,
+                   e.raw_response   = l_resp,
+                   e.extracted_json = l_answer,
+                   e.error_message  = NULL
+            WHERE  e.extraction_id  = l_extraction_id;
+
+            UPDATE dla_documents d
+            SET    d.status      = 'EXTRACTED'
+            WHERE  d.document_id = p_document_id;
+
+            log_audit(
+                p_action      => 'EXTRACTION_SUCCESS',
+                p_details     => 'Extraction ' || l_extraction_id || ' answered by ' || l_model
+                                 || ' in ' || l_elapsed_ms || ' ms.',
+                p_document_id => p_document_id
+            );
+
+            /* Stage it, then let the agent decide. Same two steps,
+               same savepoints, as the relay path. */
+            SAVEPOINT before_staging;
+            BEGIN
+                l_stg_header := parse_extraction(l_extraction_id);
+            EXCEPTION
+                WHEN OTHERS THEN
+                    ROLLBACK TO before_staging;
+                    l_stg_header := NULL;
+            END;
+
+            IF l_stg_header IS NOT NULL THEN
+                SAVEPOINT before_decision;
+                BEGIN
+                    process_staging(
+                        p_stg_header_id => l_stg_header,
+                        p_invoice_id    => l_invoice_id,
+                        p_flag_count    => l_flag_count
+                    );
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        ROLLBACK TO before_decision;
+                END;
+            END IF;
+        ELSE
+            UPDATE dla_extractions e
+            SET    e.status         = 'ERROR',
+                   e.elapsed_ms     = l_elapsed_ms,
+                   e.raw_response   = l_resp,
+                   e.error_message  = SUBSTR(l_error, 1, 4000)
+            WHERE  e.extraction_id  = l_extraction_id;
+
+            UPDATE dla_documents d
+            SET    d.status      = 'ERROR'
+            WHERE  d.document_id = p_document_id;
+
+            log_audit(
+                p_action      => 'EXTRACTION_ERROR',
+                p_details     => 'Extraction ' || l_extraction_id || ': ' || SUBSTR(l_error, 1, 3000),
+                p_document_id => p_document_id
+            );
+        END IF;
+
+        RETURN l_extraction_id;
     END extract_document;
 
     /* --------------------------------------------------------
