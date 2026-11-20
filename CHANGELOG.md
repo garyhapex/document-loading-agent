@@ -13,7 +13,15 @@ Newest entries at the top. Each entry records what was done, where, and the resu
 | 5 | Watched folder, database side: `db/relay/DLA_04_RELAY_DATABASE.sql` now adds `DLA_RELAY_PKG.RECEIVE_DOCUMENT` and a third endpoint `POST /dla/relay/documents` (same token header). Stores the file in `DLA_DOCUMENTS` with UPLOADED_BY = WATCHED_FOLDER and queues it, exactly as an upload on page 2. Test 2 added (wrong token 401, wrong type 400). | - | Written. **Not yet run on DEV.** Run as WKSP_WKSPPRDWORKSPACE; token and prompt are kept. |
 | 6 | Watched folder, PC side: `relay/dla-relay.js` 1.2.0. New optional setting `watch_folder`. Every 5 s the folder is listed; a file is sent only when its size is unchanged between two looks (handles a file still being written); sent files move to `done\`, refused or non-invoice files to `failed\` with a `.txt` note; a file that cannot be sent (database unreachable) is tried 5 times, then set aside. Only .pdf, .png, .jpg, .jpeg. | - | Written. Tested by Claude against a stand-in database server: a sample PDF sent and moved to done; a .txt, an empty .pdf and a refused file moved to failed with notes. **Not yet run against DEV.** |
 | 7 | `db/utilities/DLA_99_DROP_ALL.sql` now also deletes the ORDS module `dla.relay` and drops `DLA_RELAY_PKG` (was owed). Must now run as WKSP_WKSPPRDWORKSPACE. | - | Written. Not run (it is destructive). |
-| 8 | Session closed. `docs/DLA_SESSION_HANDOFF.md` and the project documents brought up to date. Still owed: export of application 300 into `apex/`. | - | Next: run step 5 on DEV, set `watch_folder` in the settings file, start relay 1.2.0, drop a gas PDF in the folder and watch it load with nobody touching the application. |
+| 8 | Session closed. `docs/DLA_SESSION_HANDOFF.md` and the project documents brought up to date. Still owed: export of application 300 into `apex/`. | - | Done. |
+
+## 11/20/2026 - Phase 4: The watched folder, live
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Ran `db/relay/DLA_04_RELAY_DATABASE.sql` (third endpoint `POST /dla/relay/documents`, `DLA_RELAY_PKG.RECEIVE_DOCUMENT`) | DEV, as WKSP_WKSPPRDWORKSPACE | Done. Token unchanged. |
+| 2 | Added `watch_folder` = `C:\DLA\inbox` to `relay/dla-relay-settings.json`; started relay 1.2.0 | Local PC | Banner: `Watch : C:\DLA\inbox`. The relay created the folder with `done` and `failed` inside it. (Format standard Rule 17 added: say what a program does to the PC before it runs.) |
+| 3 | Copied all six gas PDFs from `samples/invoices-gas/` into `C:\DLA\inbox` | Local PC and DEV | **Passed.** Found at 08:59:20, all six sent by 08:59:26 in file-name order (documents 21 to 26, extractions 21 to 26), moved to `done`, GAS_01 picked up for reading at 08:59:30. Nobody touched the application. Every one of the six is now a duplicate of an invoice already loaded or already waiting, so all six are expected to stop for a person. |
 
 ## 11/19/2026 - Phase 3: Checks and the agent's decision (started)
 
