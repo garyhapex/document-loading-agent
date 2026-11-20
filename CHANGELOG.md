@@ -2,6 +2,19 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/19/2026 (late evening) - Phase 4: The review page, and the watched folder (written)
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Open check from the last chat: Gary ran `db/relay/DLA_09_PROCESS_STAGED.sql` | DEV | Closed. Document 7 (GAS_04) is staged invoice 12 and its flag is "The invoice date is missing." The model left the date blank as instructed and the check stopped it. The 60-second read was simply a fast read. Nothing to fix. |
+| 2 | Built page 3, Review Invoices, in application 300 (Claude, in Page Designer). Queue of PENDING staged invoices; the invoice file shown beside the fields (Ajax callback `SHOW_DOCUMENT` streams `DLA_DOCUMENTS.FILE_BLOB`); editable fields with a vendor pick list; flags and lines; buttons Save and check again (re-runs `DLA_PKG.VALIDATE_STAGING`), Approve and load (`DLA_PKG.LOAD_INVOICE`, LOADED_BY = the reviewer), Reject. Human Task not used. | DEV, Page Designer | Done and saved. Menu entry with icon. |
+| 3 | Tested page 3 on real data | DEV | Passed. GAS_04 (missing date): date typed, Save and check again cleared the flag, Approve and load created the invoice with LOADED_BY = GHALL. GAS_05 (duplicate): rejected with a comment; document REJECTED. GAS_03 and GAS_06 left waiting on purpose, as demo material. Known: the green success message does not show after the branch back to the page; decisions are correct. |
+| 4 | Page 3 layout tightened at Gary's request: the queue hides while an invoice is open (Back to the list brings it back), shorter comment box, shorter frame | DEV, Page Designer | Done. The whole review fits one screen. |
+| 5 | Watched folder, database side: `db/relay/DLA_04_RELAY_DATABASE.sql` now adds `DLA_RELAY_PKG.RECEIVE_DOCUMENT` and a third endpoint `POST /dla/relay/documents` (same token header). Stores the file in `DLA_DOCUMENTS` with UPLOADED_BY = WATCHED_FOLDER and queues it, exactly as an upload on page 2. Test 2 added (wrong token 401, wrong type 400). | - | Written. **Not yet run on DEV.** Run as WKSP_WKSPPRDWORKSPACE; token and prompt are kept. |
+| 6 | Watched folder, PC side: `relay/dla-relay.js` 1.2.0. New optional setting `watch_folder`. Every 5 s the folder is listed; a file is sent only when its size is unchanged between two looks (handles a file still being written); sent files move to `done\`, refused or non-invoice files to `failed\` with a `.txt` note; a file that cannot be sent (database unreachable) is tried 5 times, then set aside. Only .pdf, .png, .jpg, .jpeg. | - | Written. Tested by Claude against a stand-in database server: a sample PDF sent and moved to done; a .txt, an empty .pdf and a refused file moved to failed with notes. **Not yet run against DEV.** |
+| 7 | `db/utilities/DLA_99_DROP_ALL.sql` now also deletes the ORDS module `dla.relay` and drops `DLA_RELAY_PKG` (was owed). Must now run as WKSP_WKSPPRDWORKSPACE. | - | Written. Not run (it is destructive). |
+| 8 | Session closed. `docs/DLA_SESSION_HANDOFF.md` and the project documents brought up to date. Still owed: export of application 300 into `apex/`. | - | Next: run step 5 on DEV, set `watch_folder` in the settings file, start relay 1.2.0, drop a gas PDF in the folder and watch it load with nobody touching the application. |
+
 ## 11/19/2026 - Phase 3: Checks and the agent's decision (started)
 
 | Step | What | Where | Result |

@@ -3,7 +3,7 @@
 // Document Loading Agent -- Invoice Relay
 //
 // Author  : Claude for Gary D. Hall
-// Version : 1.1.0 (11/19/2026)
+// Version : 1.2.0 (11/19/2026)
 //
 // WHAT IT IS
 //   A small program that runs on the PC where Ollama is installed. It sits
@@ -40,10 +40,41 @@
 //   is not installed, a PDF is answered with a clear error that says so;
 //   pictures still work. Only the first PDF_MAX_PAGES pages are read.
 //
+// THE WATCHED FOLDER (1.2.0)
+//   Optional. When "watch_folder" is set (for example C:\DLA\inbox), the
+//   relay also looks in that folder every few seconds. Anyone who saves,
+//   scans or copies an invoice into it has "uploaded" it: the relay sends
+//   the file to the database
+//     POST {ORDS}/dla/relay/documents
+//   where it is stored and queued exactly as a drop on the Upload page is,
+//   and the model reads it next. Nobody opens the application.
+//   What happens to each file:
+//     sent OK      -> moved to  {watch_folder}\done
+//     refused      -> moved to  {watch_folder}\failed  (reason in the log
+//                     and in a .txt beside the file)
+//     not readable -> left in place and tried again next time; after
+//                     WATCH_MAX_TRIES tries it goes to failed
+//   The three real-world problems and how they are handled:
+//     1. A file still being written (a scan or a slow copy). A file is only
+//        picked up when its size has not changed between two looks and it
+//        can be opened for reading. A half-copied file is left alone.
+//     2. The same file dropped twice. Each file is moved out of the folder
+//        the moment it is sent, so one drop is one read. If someone copies
+//        the same invoice in again later it IS read again, on purpose, and
+//        the invoice-level duplicate check in the database stops it for a
+//        person (that is the agent's job, not the relay's).
+//     3. A file that is not an invoice (a .txt, .docx, .xlsx, Thumbs.db).
+//        Only .pdf, .png, .jpg and .jpeg are sent. Anything else is moved
+//        to failed with a note, so the folder never fills with junk.
+//   The two sub-folders are created by the relay if they are missing.
+//
 // SETTINGS
 //   1. dla-relay-settings.json, in the same folder as this file:
 //        { "ords_base_url": "https://.../ords/prd_workspace",
-//          "relay_token":   "..." }
+//          "relay_token":   "...",
+//          "watch_folder":  "C:\\DLA\\inbox" }
+//      watch_folder is optional; leave it out and the relay only reads
+//      what the Upload page queues. In JSON every backslash is doubled.
 //      Optional: "pdftoppm_path", the full path of pdftoppm.exe, only if
 //      the relay cannot find it by itself.
 //      Optional: "ollama_url" (default http://127.0.0.1:11434). The number
@@ -51,7 +82,8 @@
 //      ::1, where Ollama does not listen (ECONNREFUSED ::1:11434).
 //      That file holds a secret and is in .gitignore. Never commit it.
 //   2. If there is no settings file, the environment variables
-//        DLA_ORDS_BASE_URL, DLA_RELAY_TOKEN, DLA_OLLAMA_URL
+//        DLA_ORDS_BASE_URL, DLA_RELAY_TOKEN, DLA_OLLAMA_URL,
+//        DLA_WATCH_FOLDER, DLA_PDFTOPPM_PATH
 //      (for running under pm2 with an ecosystem file).
 //   Without settings the relay says so once a minute and does nothing else.
 //
@@ -75,7 +107,7 @@ const path    = require('path');
 const os      = require('os');
 const { execFile, execFileSync } = require('child_process');
 
-const RELAY_VERSION = '1.1.0';
+const RELAY_VERSION = '1.2.0';
 
 // ============================================================================
 // CONFIGURATION
@@ -93,11 +125,12 @@ function loadSettings() {
                      ordsBaseUrl: raw.ords_base_url ? String(raw.ords_base_url).trim() : null,
                      relayToken:  raw.relay_token   ? String(raw.relay_token).trim()   : null,
                      ollamaUrl:   raw.ollama_url    ? String(raw.ollama_url).trim()    : 'http://127.0.0.1:11434',
-                     pdftoppmPath: raw.pdftoppm_path ? String(raw.pdftoppm_path).trim() : null };
+                     pdftoppmPath: raw.pdftoppm_path ? String(raw.pdftoppm_path).trim() : null,
+                     watchFolder: raw.watch_folder  ? String(raw.watch_folder).trim()  : null };
         } catch (err) {
             return { source: SETTINGS_FILE, error: err.message,
                      ordsBaseUrl: null, relayToken: null, ollamaUrl: 'http://127.0.0.1:11434',
-                     pdftoppmPath: null };
+                     pdftoppmPath: null, watchFolder: null };
         }
     }
     return { source:      'environment variables',
@@ -105,7 +138,8 @@ function loadSettings() {
              ordsBaseUrl: process.env.DLA_ORDS_BASE_URL || null,
              relayToken:  process.env.DLA_RELAY_TOKEN   || null,
              ollamaUrl:   process.env.DLA_OLLAMA_URL    || 'http://127.0.0.1:11434',
-             pdftoppmPath: process.env.DLA_PDFTOPPM_PATH || null };
+             pdftoppmPath: process.env.DLA_PDFTOPPM_PATH || null,
+             watchFolder: process.env.DLA_WATCH_FOLDER  || null };
 }
 
 const SETTINGS = loadSettings();
@@ -133,6 +167,19 @@ const PDF_TIMEOUT_MS     = 120000;
 // Answer posting: tries and the wait between them.
 const ANSWER_TRIES  = 4;
 const ANSWER_GAP_MS = 2000;
+
+// The watched folder (1.2.0). How often it is looked at, which file types
+// are invoices, and how many times a file that cannot be sent (database
+// unreachable, file locked) is tried before it is set aside in "failed".
+// A file is sent only after its size is the same on two looks in a row, so
+// a file still being copied or scanned waits at least one interval.
+const WATCH_POLL_INTERVAL_MS = 5000;
+const WATCH_FILE_TYPES       = { '.pdf': 'application/pdf',
+                                 '.png': 'image/png',
+                                 '.jpg': 'image/jpeg',
+                                 '.jpeg': 'image/jpeg' };
+const WATCH_MAX_TRIES        = 5;
+const WATCH_MAX_FILE_BYTES   = 25 * 1024 * 1024;
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -415,6 +462,157 @@ async function postAnswer(extractionId, answer) {
 }
 
 // ============================================================================
+// THE WATCHED FOLDER (1.2.0)
+// Every WATCH_POLL_INTERVAL_MS the folder is listed. For each file:
+//   - sub-folders and unknown types are dealt with at once
+//   - a file whose size changed since the last look is left for next time
+//   - a steady file is read, sent to POST documents, and moved to done
+// seen[] remembers each file's size and how many sends have been tried.
+// ============================================================================
+const WATCH = { folder: null, done: null, failed: null, seen: new Map(), busy: false, ready: false };
+
+function setUpWatchFolder() {
+    if (!SETTINGS.watchFolder) return;
+    WATCH.folder = path.resolve(SETTINGS.watchFolder);
+    WATCH.done   = path.join(WATCH.folder, 'done');
+    WATCH.failed = path.join(WATCH.folder, 'failed');
+    try {
+        fs.mkdirSync(WATCH.folder, { recursive: true });
+        fs.mkdirSync(WATCH.done,   { recursive: true });
+        fs.mkdirSync(WATCH.failed, { recursive: true });
+        WATCH.ready = true;
+    } catch (err) {
+        WATCH.ready = false;
+        WATCH.error = 'cannot create or open the watched folder ' + WATCH.folder + ': ' + err.message;
+    }
+}
+
+// Moves a file into done or failed. If a file of the same name is already
+// there, the new one gets a time stamp so nothing is overwritten.
+function moveAside(fromPath, toDir, note) {
+    const base = path.basename(fromPath);
+    let target = path.join(toDir, base);
+    if (fs.existsSync(target)) {
+        const ext  = path.extname(base);
+        const tag  = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
+        target = path.join(toDir, base.slice(0, base.length - ext.length) + '-' + tag + ext);
+    }
+    try {
+        fs.renameSync(fromPath, target);
+    } catch (err) {
+        warn('WATCH', 'Could not move ' + base + ' to ' + toDir + ': ' + err.message);
+        return false;
+    }
+    if (note) {
+        try { fs.writeFileSync(target + '.txt', stamp() + '  ' + note + os.EOL); } catch (e) { /* best effort */ }
+    }
+    WATCH.seen.delete(fromPath);
+    return true;
+}
+
+// Sends one file to the database. Resolves to { ok, permanent, message }.
+// permanent means trying again will not help (bad type, bad token).
+async function sendFile(filePath, mime) {
+    const name   = path.basename(filePath);
+    const buffer = fs.readFileSync(filePath);           // throws if locked -> caller retries
+    const body   = { file_name:   name,
+                     mime_type:   mime,
+                     file_base64: buffer.toString('base64'),
+                     source:      WATCH.folder };
+    const resp = await httpRequest('POST', ordsUrl('/dla/relay/documents'), ordsHeaders(), body, ORDS_TIMEOUT_MS);
+    const message = resp.json && resp.json.message ? resp.json.message : String(resp.raw).slice(0, 200);
+    if (resp.statusCode === 200) return { ok: true, permanent: false, message: message };
+    return { ok: false,
+             permanent: (resp.statusCode === 400 || resp.statusCode === 401),
+             message: 'HTTP ' + resp.statusCode + ' ' + message };
+}
+
+async function lookInWatchFolder() {
+    if (!WATCH.ready || WATCH.busy) return;
+    WATCH.busy = true;
+    try {
+        let entries;
+        try {
+            entries = fs.readdirSync(WATCH.folder, { withFileTypes: true });
+        } catch (err) {
+            warn('WATCH', 'Cannot list ' + WATCH.folder + ': ' + err.message);
+            return;
+        }
+
+        // Files only, in name order, so GAS_01 goes before GAS_02.
+        const files = entries.filter((e) => e.isFile()).map((e) => e.name).sort();
+
+        for (const name of files) {
+            const filePath = path.join(WATCH.folder, name);
+            const ext      = path.extname(name).toLowerCase();
+
+            // Not an invoice type: set it aside with a note, once.
+            if (!WATCH_FILE_TYPES[ext]) {
+                if (name.toLowerCase() === 'desktop.ini' || name.toLowerCase() === 'thumbs.db') continue;
+                log('WATCH', name + ' is not a PDF, PNG or JPG. Moved to failed.');
+                moveAside(filePath, WATCH.failed, 'Not an invoice file type. The relay reads .pdf, .png, .jpg and .jpeg only.');
+                continue;
+            }
+
+            let size;
+            try { size = fs.statSync(filePath).size; } catch (e) { continue; }   // vanished between list and stat
+
+            const prev = WATCH.seen.get(filePath);
+            if (!prev || prev.size !== size) {
+                // First look, or still growing: remember the size and wait one interval.
+                WATCH.seen.set(filePath, { size: size, tries: prev ? prev.tries : 0 });
+                if (!prev) log('WATCH', 'Found ' + name + ' (' + size + ' bytes). Checking it is complete.');
+                continue;
+            }
+
+            if (size === 0) {
+                log('WATCH', name + ' is empty. Moved to failed.');
+                moveAside(filePath, WATCH.failed, 'The file is empty (0 bytes).');
+                continue;
+            }
+            if (size > WATCH_MAX_FILE_BYTES) {
+                log('WATCH', name + ' is ' + Math.round(size / 1024 / 1024) + ' MB, over the limit. Moved to failed.');
+                moveAside(filePath, WATCH.failed, 'The file is larger than ' + (WATCH_MAX_FILE_BYTES / 1024 / 1024) + ' MB.');
+                continue;
+            }
+
+            // Steady: send it.
+            prev.tries += 1;
+            let result;
+            try {
+                result = await sendFile(filePath, WATCH_FILE_TYPES[ext]);
+            } catch (err) {
+                result = { ok: false, permanent: false, message: err.message };
+            }
+
+            if (result.ok) {
+                log('WATCH', name + ' sent to the database: ' + result.message + ' Moved to done.');
+                moveAside(filePath, WATCH.done, null);
+            } else if (result.permanent) {
+                warn('WATCH', name + ' refused by the database: ' + result.message + ' Moved to failed.');
+                moveAside(filePath, WATCH.failed, 'Refused by the database: ' + result.message);
+            } else if (prev.tries >= WATCH_MAX_TRIES) {
+                warn('WATCH', name + ' could not be sent after ' + prev.tries + ' tries: ' + result.message + ' Moved to failed.');
+                moveAside(filePath, WATCH.failed, 'Could not be sent after ' + prev.tries + ' tries: ' + result.message +
+                                                  ' Copy it back into the folder to try again.');
+            } else {
+                warn('WATCH', name + ' not sent (try ' + prev.tries + '/' + WATCH_MAX_TRIES + '): ' + result.message +
+                              ' Will try again.');
+            }
+        }
+
+        // Forget files that are no longer there (moved or deleted by someone).
+        for (const known of Array.from(WATCH.seen.keys())) {
+            if (!fs.existsSync(known)) WATCH.seen.delete(known);
+        }
+    } catch (err) {
+        warn('WATCH', 'Looking in the folder failed: ' + err.message);
+    } finally {
+        WATCH.busy = false;
+    }
+}
+
+// ============================================================================
 // THE WORK LOOP
 // ============================================================================
 let busy = false;
@@ -479,6 +677,14 @@ function start() {
     console.log(' Ollama   : ' + SETTINGS.ollamaUrl);
     console.log(' PDFs     : ' + (PDFTOPPM ? 'converter found (' + PDFTOPPM + ')'
                                            : 'converter NOT found. PDFs will be refused; pictures still work.'));
+    setUpWatchFolder();
+    if (!SETTINGS.watchFolder) {
+        console.log(' Watch    : off. Set "watch_folder" in the settings to pick invoices up from a folder.');
+    } else if (WATCH.ready) {
+        console.log(' Watch    : ' + WATCH.folder + '  (sent files go to done\\, refused files to failed\\)');
+    } else {
+        console.log(' Watch    : NOT running. ' + WATCH.error);
+    }
 
     let problem = null;
     if (SETTINGS.error) {
@@ -505,6 +711,11 @@ function start() {
 
     askForWork();
     setInterval(askForWork, WORK_POLL_INTERVAL_MS);
+
+    if (WATCH.ready) {
+        lookInWatchFolder();
+        setInterval(lookInWatchFolder, WATCH_POLL_INTERVAL_MS);
+    }
 }
 
 start();
