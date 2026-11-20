@@ -17,7 +17,7 @@ Built by Gary D. Hall.
 
 | Model | Where it runs | Purpose |
 |---|---|---|
-| Qwen2.5-VL 7B (`qwen2.5vl:7b`) through Ollama | A local PC, reached through a tunnel | The in-house option |
+| Qwen2.5-VL 7B (`qwen2.5vl:7b`) through Ollama | A local PC. A Node relay on the PC calls out to the database for work; nothing calls in. | The in-house option |
 | OCI Generative AI | Oracle Cloud | The cloud option |
 
 One setting chooses which model reads a document. Everything after extraction is shared. A compare page runs the same invoice through both.
@@ -45,6 +45,8 @@ Uses only features available on Oracle Database 19c with APEX 24.2: JSON_TABLE, 
 | `db/tables/` | Table create scripts |
 | `db/packages/` | PL/SQL packages |
 | `db/data/` | Settings and data changes |
+| `db/relay/` | Database side of the invoice relay: queue, package, ORDS endpoints |
+| `relay/` | The Node relay that runs on the PC |
 | `db/utilities/` | Inventory and start-over scripts |
 | `apex/` | APEX application export |
 | `samples/invoices/` | Fictional sample invoices, PDF and PNG |
@@ -59,6 +61,7 @@ Run in SQL Developer as ADMIN on DEV, with F5 (Run Script), in this order:
 | 1 | `db/tables/DLA_01_CREATE_TABLES.sql` | Creates the 10 DLA_ tables and seed rows |
 | 2 | `db/packages/DLA_02_PACKAGE.sql` | Creates package DLA_PKG and tests it |
 | 3 | `db/data/DLA_03_SET_LOCAL_MODEL.sql` | Sets the local model to qwen2.5vl:7b |
+| 4 | `db/relay/DLA_04_RELAY_DATABASE.sql` | Relay queue, package DLA_RELAY_PKG and ORDS module dla.relay. **Run as WKSP_WKSPPRDWORKSPACE, not ADMIN.** |
 
 `db/utilities/DLA_99_DROP_ALL.sql` removes everything above. Use it only to start over.
 

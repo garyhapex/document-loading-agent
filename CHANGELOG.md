@@ -11,7 +11,9 @@ Newest entries at the top. Each entry records what was done, where, and the resu
 | 3 | Pulled `llama3.2-vision` (7.8 GB) and tested | Local PC | Failed. Error: unknown model architecture 'mllama'. Llama 3.2 Vision is not supported on Ollama 0.30.0 and later. Model removed. |
 | 4 | Pulled `qwen2.5vl:7b` (6.0 GB) | Local PC | Done. |
 | 5 | Tested `qwen2.5vl:7b` on `samples/invoices/DLA_01_clean_prairie_fastener.png` | Local PC | Passed. Model answered invoice number INV-10001 and total due $364.00, both correct. |
-| 6 | Wrote `db/data/DLA_03_SET_LOCAL_MODEL.sql` | - | Written. Not yet run. |
+| 6 | Ran `db/data/DLA_03_SET_LOCAL_MODEL.sql` | DEV, as ADMIN | Done. OLLAMA_MODEL = qwen2.5vl:7b. |
+| 7 | Design decision | - | No ngrok. The local model is reached with a Node relay that calls out to ORDS, the same pattern as the Stick-IT print relay. |
+| 8 | Wrote `db/relay/DLA_04_RELAY_DATABASE.sql` | - | Written. Not yet run. |
 
 ## 11/19/2026 - Phase 1: Foundation
 

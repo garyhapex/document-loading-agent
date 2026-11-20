@@ -1,0 +1,704 @@
+/* ============================================================
+   Script      : DLA_04_RELAY_DATABASE.sql
+   Project     : Document Loading Agent (DLA) - Phase 2
+   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
+   Changes     : YES
+                 1. DLA_EXTRACTIONS: status check now allows PENDING
+                 2. DLA_SETTINGS: adds RELAY_TOKEN and
+                    EXTRACTION_PROMPT if they are not there
+                 3. Creates package DLA_RELAY_PKG
+                 4. Creates ORDS module dla.relay (2 endpoints)
+                 Touches nothing that does not start with DLA_
+                 or dla.
+   Purpose     : The database side of the invoice relay. Same
+                 pattern as the Stick-IT print relay: the relay
+                 on the PC calls OUT to ORDS, asks for work, and
+                 posts the answer back. Nothing calls in.
+                   GET  /ords/prd_workspace/dla/relay/work
+                   POST /ords/prd_workspace/dla/relay/work/:extraction_id
+                 Both need the header X-DLA-Relay-Token.
+   Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
+   Run as      : WKSP_WKSPPRDWORKSPACE  <-- NOT ADMIN.
+                 ORDS modules belong to the user that defines
+                 them, the same as IMAGINARY_ORDS_ENDPOINTS.sql.
+                 SQL Developer, F5 (Run Script)
+   Run after   : DLA_03_SET_LOCAL_MODEL.sql
+   Re-runnable : yes
+   Author      : Claude for Gary D. Hall
+   Date        : 11/19/2026
+   ============================================================ */
+
+SET DEFINE OFF
+SET LINESIZE 200
+SET PAGESIZE 200
+SET SERVEROUTPUT ON
+
+ALTER SESSION SET CURRENT_SCHEMA = WKSP_WKSPPRDWORKSPACE;
+
+/* ------------------------------------------------------------
+   Step 1  : Allow status PENDING on DLA_EXTRACTIONS
+   Purpose : PENDING = waiting for the relay to pick it up.
+             The constraint is dropped and added again so this
+             step can be re-run.
+   ------------------------------------------------------------ */
+ALTER TABLE dla_extractions DROP CONSTRAINT dla_extractions_status_ck;
+
+ALTER TABLE dla_extractions ADD CONSTRAINT dla_extractions_status_ck
+    CHECK (status IN ('PENDING', 'RUNNING', 'SUCCESS', 'ERROR'));
+
+/* ------------------------------------------------------------
+   Step 2  : Settings
+   Purpose : RELAY_TOKEN is the relay's password, generated once.
+             EXTRACTION_PROMPT is the instruction both AI models
+             get. Each row is added only if it is not there, so
+             re-running never changes an existing token.
+   ------------------------------------------------------------ */
+INSERT INTO dla_settings (setting_name, setting_value, description)
+SELECT 'RELAY_TOKEN',
+       RAWTOHEX(SYS_GUID()) || RAWTOHEX(SYS_GUID()),
+       'Token the DLA relay sends in the X-DLA-Relay-Token header'
+FROM   dual
+WHERE  NOT EXISTS (SELECT 1
+                   FROM   dla_settings s
+                   WHERE  s.setting_name = 'RELAY_TOKEN');
+
+INSERT INTO dla_settings (setting_name, setting_value, description)
+SELECT 'EXTRACTION_PROMPT',
+       q'[You are reading a vendor invoice. Return only one JSON object, with no other text, using exactly these keys: vendor_name (string), invoice_number (string), invoice_date (string, YYYY-MM-DD), due_date (string, YYYY-MM-DD), subtotal (number), tax (number), total (number), line_items (array of objects with these keys: line_number (number), description (string), quantity (number), unit_price (number), amount (number)). Use null for any value that is not printed on the invoice. Do not calculate or guess missing values. Copy numbers exactly as printed, without currency symbols or thousands separators.]',
+       'Instruction sent to the AI model with every invoice'
+FROM   dual
+WHERE  NOT EXISTS (SELECT 1
+                   FROM   dla_settings s
+                   WHERE  s.setting_name = 'EXTRACTION_PROMPT');
+
+COMMIT;
+
+/* ------------------------------------------------------------
+   Package spec : DLA_RELAY_PKG
+   Purpose      : Logic behind the two relay endpoints, plus the
+                  routine that puts an invoice in the queue.
+   ------------------------------------------------------------ */
+CREATE OR REPLACE PACKAGE dla_relay_pkg AUTHID DEFINER AS
+
+    /* Puts one document in the queue for the local model.
+       Returns the new EXTRACTION_ID. Does not commit. */
+    FUNCTION queue_extraction (
+        p_document_id  IN NUMBER
+    ) RETURN NUMBER;
+
+    /* Relay asks for work. Hands out one PENDING extraction at
+       a time and marks it RUNNING. Called by GET work. */
+    PROCEDURE get_work (
+        p_token        IN  VARCHAR2,
+        p_result_json  OUT CLOB,
+        p_http_status  OUT NUMBER
+    );
+
+    /* Relay posts the model's answer for one extraction.
+       Called by POST work/:extraction_id. */
+    PROCEDURE receive_result (
+        p_extraction_id   IN  NUMBER,
+        p_token           IN  VARCHAR2,
+        p_body            IN  CLOB,
+        p_result_status   OUT VARCHAR2,
+        p_result_message  OUT VARCHAR2,
+        p_http_status     OUT NUMBER
+    );
+
+END dla_relay_pkg;
+/
+
+SHOW ERRORS PACKAGE dla_relay_pkg
+
+/* ------------------------------------------------------------
+   Package body : DLA_RELAY_PKG
+   Purpose      : Code for the spec above. Every routine logs a
+                  failure to DLA_AUDIT_LOG. GET_WORK and
+                  RECEIVE_RESULT report failures through their
+                  OUT parameters so the endpoint can answer the
+                  relay with a proper HTTP status.
+   ------------------------------------------------------------ */
+CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
+
+    /* --------------------------------------------------------
+       Private : TOKEN_OK
+       Purpose : TRUE when the token sent matches RELAY_TOKEN.
+       -------------------------------------------------------- */
+    FUNCTION token_ok (
+        p_token  IN VARCHAR2
+    ) RETURN BOOLEAN IS
+        l_expected  dla_settings.setting_value%TYPE;
+    BEGIN
+        l_expected := dla_pkg.get_setting('RELAY_TOKEN');
+        RETURN p_token IS NOT NULL
+           AND l_expected IS NOT NULL
+           AND p_token = l_expected;
+    END token_ok;
+
+    /* --------------------------------------------------------
+       Private : ERROR_JSON
+       Purpose : {"status":"ERROR","message":"..."} as a CLOB.
+       -------------------------------------------------------- */
+    FUNCTION error_json (
+        p_message  IN VARCHAR2
+    ) RETURN CLOB IS
+        l_json  CLOB;
+    BEGIN
+        APEX_JSON.INITIALIZE_CLOB_OUTPUT;
+        APEX_JSON.OPEN_OBJECT;
+        APEX_JSON.WRITE('status',  'ERROR');
+        APEX_JSON.WRITE('message', p_message);
+        APEX_JSON.CLOSE_OBJECT;
+        l_json := APEX_JSON.GET_CLOB_OUTPUT;
+        APEX_JSON.FREE_OUTPUT;
+        RETURN l_json;
+    END error_json;
+
+    /* --------------------------------------------------------
+       Public  : QUEUE_EXTRACTION
+       -------------------------------------------------------- */
+    FUNCTION queue_extraction (
+        p_document_id  IN NUMBER
+    ) RETURN NUMBER IS
+        l_model_code     dla_extractions.model_code%TYPE;
+        l_model_name     dla_extractions.model_name%TYPE;
+        l_count          NUMBER;
+        l_extraction_id  dla_extractions.extraction_id%TYPE;
+    BEGIN
+        l_model_code := dla_pkg.c_model_ollama;
+        l_model_name := dla_pkg.get_setting('OLLAMA_MODEL');
+
+        SELECT COUNT(*)
+        INTO   l_count
+        FROM   dla_documents d
+        WHERE  d.document_id = p_document_id;
+
+        IF l_count = 0 THEN
+            RAISE_APPLICATION_ERROR(
+                -20020,
+                'DLA_RELAY_PKG.QUEUE_EXTRACTION: there is no document ' || p_document_id || '.'
+            );
+        END IF;
+
+        INSERT INTO dla_extractions (
+            document_id,
+            model_code,
+            model_name,
+            status
+        ) VALUES (
+            p_document_id,
+            l_model_code,
+            l_model_name,
+            'PENDING'
+        )
+        RETURNING extraction_id INTO l_extraction_id;
+
+        dla_pkg.log_audit(
+            p_action      => 'EXTRACTION_QUEUED',
+            p_details     => 'Extraction ' || l_extraction_id || ' queued for ' || l_model_name || '.',
+            p_document_id => p_document_id
+        );
+
+        RETURN l_extraction_id;
+    EXCEPTION
+        WHEN OTHERS THEN
+            dla_pkg.log_audit(
+                p_action      => 'RELAY_ERROR',
+                p_details     => 'QUEUE_EXTRACTION failed: ' || SQLERRM,
+                p_document_id => p_document_id
+            );
+            RAISE;
+    END queue_extraction;
+
+    /* --------------------------------------------------------
+       Public  : GET_WORK
+       Answer  : {"status":"OK","work":[ {extraction_id,
+                  document_id, file_name, mime_type, model,
+                  prompt, image_base64} ]}
+                 An empty queue is "work":[].
+       -------------------------------------------------------- */
+    PROCEDURE get_work (
+        p_token        IN  VARCHAR2,
+        p_result_json  OUT CLOB,
+        p_http_status  OUT NUMBER
+    ) IS
+        l_model_code     dla_extractions.model_code%TYPE;
+        l_prompt         dla_settings.setting_value%TYPE;
+        l_extraction_id  dla_extractions.extraction_id%TYPE;
+        l_document_id    dla_extractions.document_id%TYPE;
+        l_model_name     dla_extractions.model_name%TYPE;
+        l_file_name      dla_documents.file_name%TYPE;
+        l_mime_type      dla_documents.mime_type%TYPE;
+        l_blob           BLOB;
+        l_base64         CLOB;
+        l_error          VARCHAR2(4000);
+    BEGIN
+        p_http_status := 200;
+
+        IF NOT token_ok(p_token) THEN
+            p_http_status := 401;
+            p_result_json := error_json('Relay token is missing or wrong.');
+            RETURN;
+        END IF;
+
+        l_model_code := dla_pkg.c_model_ollama;
+        l_prompt     := dla_pkg.get_setting('EXTRACTION_PROMPT');
+
+        BEGIN
+            SELECT q.extraction_id
+            INTO   l_extraction_id
+            FROM   (SELECT e.extraction_id
+                    FROM   dla_extractions e
+                    WHERE  e.status     = 'PENDING'
+                    AND    e.model_code = l_model_code
+                    ORDER  BY e.extraction_id) q
+            WHERE  ROWNUM = 1;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                l_extraction_id := NULL;
+        END;
+
+        IF l_extraction_id IS NOT NULL THEN
+            SELECT e.document_id,
+                   e.model_name,
+                   d.file_name,
+                   d.mime_type,
+                   d.file_blob
+            INTO   l_document_id,
+                   l_model_name,
+                   l_file_name,
+                   l_mime_type,
+                   l_blob
+            FROM   dla_extractions e,
+                   dla_documents   d
+            WHERE  d.document_id   = e.document_id
+            AND    e.extraction_id = l_extraction_id;
+
+            UPDATE dla_extractions e
+            SET    e.status     = 'RUNNING',
+                   e.started_on = SYSTIMESTAMP
+            WHERE  e.extraction_id = l_extraction_id;
+
+            l_base64 := APEX_WEB_SERVICE.BLOB2CLOBBASE64(l_blob);
+        END IF;
+
+        APEX_JSON.INITIALIZE_CLOB_OUTPUT;
+        APEX_JSON.OPEN_OBJECT;
+        APEX_JSON.WRITE('status', 'OK');
+        APEX_JSON.OPEN_ARRAY('work');
+
+        IF l_extraction_id IS NOT NULL THEN
+            APEX_JSON.OPEN_OBJECT;
+            APEX_JSON.WRITE('extraction_id', l_extraction_id);
+            APEX_JSON.WRITE('document_id',   l_document_id);
+            APEX_JSON.WRITE('file_name',     l_file_name);
+            APEX_JSON.WRITE('mime_type',     l_mime_type);
+            APEX_JSON.WRITE('model',         l_model_name);
+            APEX_JSON.WRITE('prompt',        l_prompt);
+            APEX_JSON.WRITE('image_base64',  l_base64);
+            APEX_JSON.CLOSE_OBJECT;
+        END IF;
+
+        APEX_JSON.CLOSE_ARRAY;
+        APEX_JSON.CLOSE_OBJECT;
+        p_result_json := APEX_JSON.GET_CLOB_OUTPUT;
+        APEX_JSON.FREE_OUTPUT;
+    EXCEPTION
+        WHEN OTHERS THEN
+            l_error := SQLERRM;
+            ROLLBACK;
+            dla_pkg.log_audit(
+                p_action  => 'RELAY_ERROR',
+                p_details => 'GET_WORK failed: ' || l_error
+            );
+            p_http_status := 500;
+            p_result_json := error_json('GET_WORK failed. See DLA_AUDIT_LOG.');
+    END get_work;
+
+    /* --------------------------------------------------------
+       Public  : RECEIVE_RESULT
+       Body    : {"status":"SUCCESS" or "ERROR",
+                  "raw_response":"...", "elapsed_ms":n,
+                  "message":"..."}
+       A SUCCESS whose raw_response is not valid JSON is stored
+       as ERROR, with the raw text kept for review.
+       -------------------------------------------------------- */
+    PROCEDURE receive_result (
+        p_extraction_id   IN  NUMBER,
+        p_token           IN  VARCHAR2,
+        p_body            IN  CLOB,
+        p_result_status   OUT VARCHAR2,
+        p_result_message  OUT VARCHAR2,
+        p_http_status     OUT NUMBER
+    ) IS
+        l_obj          JSON_OBJECT_T;
+        l_status       VARCHAR2(20);
+        l_elapsed      NUMBER;
+        l_raw          CLOB;
+        l_message      VARCHAR2(4000);
+        l_count        NUMBER;
+        l_is_json      NUMBER := 0;
+        l_document_id  dla_extractions.document_id%TYPE;
+        l_error        VARCHAR2(4000);
+    BEGIN
+        p_http_status    := 200;
+        p_result_status  := 'OK';
+        p_result_message := 'Result stored.';
+
+        IF NOT token_ok(p_token) THEN
+            p_http_status    := 401;
+            p_result_status  := 'ERROR';
+            p_result_message := 'Relay token is missing or wrong.';
+            RETURN;
+        END IF;
+
+        IF p_body IS NULL THEN
+            p_http_status    := 400;
+            p_result_status  := 'ERROR';
+            p_result_message := 'The request has no body.';
+            RETURN;
+        END IF;
+
+        BEGIN
+            l_obj := JSON_OBJECT_T.PARSE(p_body);
+        EXCEPTION
+            WHEN OTHERS THEN
+                p_http_status    := 400;
+                p_result_status  := 'ERROR';
+                p_result_message := 'The request body is not valid JSON.';
+                RETURN;
+        END;
+
+        l_status  := UPPER(SUBSTR(l_obj.GET_STRING('status'), 1, 20));
+        l_elapsed := l_obj.GET_NUMBER('elapsed_ms');
+        l_raw     := l_obj.GET_CLOB('raw_response');
+        l_message := SUBSTR(l_obj.GET_STRING('message'), 1, 4000);
+
+        SELECT COUNT(*)
+        INTO   l_count
+        FROM   dla_extractions e
+        WHERE  e.extraction_id = p_extraction_id
+        AND    e.status        = 'RUNNING';
+
+        IF l_count = 0 THEN
+            p_http_status    := 404;
+            p_result_status  := 'ERROR';
+            p_result_message := 'Extraction ' || p_extraction_id || ' is not waiting for an answer.';
+            RETURN;
+        END IF;
+
+        IF l_status = 'SUCCESS' AND l_raw IS NOT NULL THEN
+            SELECT CASE WHEN l_raw IS JSON THEN 1 ELSE 0 END
+            INTO   l_is_json
+            FROM   dual;
+        END IF;
+
+        IF l_status = 'SUCCESS' AND l_is_json = 1 THEN
+            UPDATE dla_extractions e
+            SET    e.status         = 'SUCCESS',
+                   e.elapsed_ms     = l_elapsed,
+                   e.raw_response   = l_raw,
+                   e.extracted_json = l_raw,
+                   e.error_message  = NULL
+            WHERE  e.extraction_id  = p_extraction_id
+            RETURNING e.document_id INTO l_document_id;
+
+            UPDATE dla_documents d
+            SET    d.status      = 'EXTRACTED'
+            WHERE  d.document_id = l_document_id;
+
+            dla_pkg.log_audit(
+                p_action      => 'EXTRACTION_SUCCESS',
+                p_details     => 'Extraction ' || p_extraction_id || ' answered in ' || l_elapsed || ' ms.',
+                p_document_id => l_document_id
+            );
+        ELSE
+            IF l_status = 'SUCCESS' THEN
+                l_error := 'The model answered, but the answer is not valid JSON.';
+            ELSE
+                l_error := NVL(l_message, 'The relay reported an error with no message.');
+            END IF;
+
+            UPDATE dla_extractions e
+            SET    e.status         = 'ERROR',
+                   e.elapsed_ms     = l_elapsed,
+                   e.raw_response   = l_raw,
+                   e.error_message  = l_error
+            WHERE  e.extraction_id  = p_extraction_id
+            RETURNING e.document_id INTO l_document_id;
+
+            UPDATE dla_documents d
+            SET    d.status      = 'ERROR'
+            WHERE  d.document_id = l_document_id;
+
+            dla_pkg.log_audit(
+                p_action      => 'EXTRACTION_ERROR',
+                p_details     => 'Extraction ' || p_extraction_id || ': ' || l_error,
+                p_document_id => l_document_id
+            );
+
+            p_result_message := 'Result stored as ERROR: ' || SUBSTR(l_error, 1, 400);
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            l_error := SQLERRM;
+            ROLLBACK;
+            dla_pkg.log_audit(
+                p_action  => 'RELAY_ERROR',
+                p_details => 'RECEIVE_RESULT failed for extraction ' || p_extraction_id || ': ' || l_error
+            );
+            p_http_status    := 500;
+            p_result_status  := 'ERROR';
+            p_result_message := 'RECEIVE_RESULT failed. See DLA_AUDIT_LOG.';
+    END receive_result;
+
+END dla_relay_pkg;
+/
+
+SHOW ERRORS PACKAGE BODY dla_relay_pkg
+
+/* ------------------------------------------------------------
+   Step 4  : ORDS module dla.relay
+   Purpose : The two endpoints the relay calls. Built the same
+             way as IMAGINARY_ORDS_ENDPOINTS.sql: thin handlers
+             that call the package. DEFINE_MODULE replaces the
+             whole module, so this step can be re-run.
+             Stops with ORA-20030 if not run as
+             WKSP_WKSPPRDWORKSPACE.
+   ------------------------------------------------------------ */
+BEGIN
+    IF USER <> 'WKSP_WKSPPRDWORKSPACE' THEN
+        RAISE_APPLICATION_ERROR(
+            -20030,
+            'Step 4 must be run on the WKSP_WKSPPRDWORKSPACE connection, not ' || USER
+            || '. Switch connections and run this whole file again.'
+        );
+    END IF;
+
+    ORDS.DEFINE_MODULE(
+        p_module_name    => 'dla.relay',
+        p_base_path      => '/dla/relay/',
+        p_items_per_page => 0,
+        p_status         => 'PUBLISHED',
+        p_comments       => 'Document Loading Agent relay: asks for invoices to read and posts the answers.'
+    );
+
+    /* GET work -- the relay asks for its work. */
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'dla.relay',
+        p_pattern     => 'work',
+        p_priority    => 0,
+        p_etag_type   => 'NONE',
+        p_comments    => 'The relay asking for work.'
+    );
+
+    ORDS.DEFINE_HANDLER(
+        p_module_name   => 'dla.relay',
+        p_pattern       => 'work',
+        p_method        => 'GET',
+        p_source_type   => 'plsql/block',
+        p_comments      => 'Relay asks for work. Logic in DLA_RELAY_PKG.GET_WORK.',
+        p_source        => q'~
+DECLARE
+    l_result_json CLOB;
+    l_http_status NUMBER;
+    l_len         NUMBER;
+    l_pos         NUMBER;
+BEGIN
+    DLA_RELAY_PKG.GET_WORK(
+        p_token       => :relay_token,
+        p_result_json => l_result_json,
+        p_http_status => l_http_status
+    );
+
+    :status_code := l_http_status;
+
+    OWA_UTIL.MIME_HEADER('application/json', FALSE);
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+
+    -- An invoice image is far over 32K, so the answer is sent in pieces.
+    l_len := NVL(DBMS_LOB.GETLENGTH(l_result_json), 0);
+    l_pos := 1;
+    WHILE l_pos <= l_len LOOP
+        HTP.PRN(DBMS_LOB.SUBSTR(l_result_json, 8000, l_pos));
+        l_pos := l_pos + 8000;
+    END LOOP;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        :status_code := 500;
+        OWA_UTIL.MIME_HEADER('application/json', FALSE);
+        OWA_UTIL.HTTP_HEADER_CLOSE;
+        HTP.P('{"status":"ERROR","message":"Internal error."}');
+END;
+~'
+    );
+
+    ORDS.DEFINE_PARAMETER(
+        p_module_name        => 'dla.relay',
+        p_pattern            => 'work',
+        p_method             => 'GET',
+        p_name               => 'X-DLA-Relay-Token',
+        p_bind_variable_name => 'relay_token',
+        p_source_type        => 'HEADER',
+        p_param_type         => 'STRING',
+        p_access_method      => 'IN',
+        p_comments           => 'The relay token from DLA_SETTINGS.'
+    );
+
+    /* POST work/:extraction_id -- the relay answers one extraction. */
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'dla.relay',
+        p_pattern     => 'work/:extraction_id',
+        p_priority    => 0,
+        p_etag_type   => 'NONE',
+        p_comments    => 'The relay answering one extraction.'
+    );
+
+    ORDS.DEFINE_HANDLER(
+        p_module_name   => 'dla.relay',
+        p_pattern       => 'work/:extraction_id',
+        p_method        => 'POST',
+        p_source_type   => 'plsql/block',
+        p_mimes_allowed => 'application/json',
+        p_comments      => 'Relay answers one extraction. Logic in DLA_RELAY_PKG.RECEIVE_RESULT.',
+        p_source        => q'~
+DECLARE
+    l_extraction_id   NUMBER;
+    l_body            CLOB;
+    l_result_status   VARCHAR2(20);
+    l_result_message  VARCHAR2(500);
+    l_http_status     NUMBER;
+    l_resp            CLOB;
+
+    PROCEDURE send_json(p_resp_status IN VARCHAR2, p_resp_message IN VARCHAR2) IS
+    BEGIN
+        APEX_JSON.INITIALIZE_CLOB_OUTPUT;
+        APEX_JSON.OPEN_OBJECT;
+        APEX_JSON.WRITE('status',  p_resp_status);
+        APEX_JSON.WRITE('message', p_resp_message);
+        APEX_JSON.CLOSE_OBJECT;
+        l_resp := APEX_JSON.GET_CLOB_OUTPUT;
+        APEX_JSON.FREE_OUTPUT;
+
+        OWA_UTIL.MIME_HEADER('application/json', FALSE);
+        OWA_UTIL.HTTP_HEADER_CLOSE;
+        HTP.P(l_resp);
+    END send_json;
+BEGIN
+    l_extraction_id := :extraction_id;
+    l_body          := :body_text;
+
+    DLA_RELAY_PKG.RECEIVE_RESULT(
+        p_extraction_id  => l_extraction_id,
+        p_token          => :relay_token,
+        p_body           => l_body,
+        p_result_status  => l_result_status,
+        p_result_message => l_result_message,
+        p_http_status    => l_http_status
+    );
+
+    :status_code := l_http_status;
+    send_json(l_result_status, l_result_message);
+
+EXCEPTION
+    WHEN OTHERS THEN
+        :status_code := 500;
+        send_json('ERROR', SUBSTR(SQLERRM, 1, 400));
+END;
+~'
+    );
+
+    ORDS.DEFINE_PARAMETER(
+        p_module_name        => 'dla.relay',
+        p_pattern            => 'work/:extraction_id',
+        p_method             => 'POST',
+        p_name               => 'X-DLA-Relay-Token',
+        p_bind_variable_name => 'relay_token',
+        p_source_type        => 'HEADER',
+        p_param_type         => 'STRING',
+        p_access_method      => 'IN',
+        p_comments           => 'The relay token from DLA_SETTINGS.'
+    );
+
+    COMMIT;
+END;
+/
+
+/* ------------------------------------------------------------
+   Test 1  : Call GET_WORK the way the endpoint will
+   Purpose : Proves the package runs. Expect:
+               Wrong token : HTTP 401
+               Right token : HTTP 200 {"status":"OK","work":[]}
+             The token itself is never printed.
+   ------------------------------------------------------------ */
+DECLARE
+    l_json    CLOB;
+    l_status  NUMBER;
+BEGIN
+    dla_relay_pkg.get_work(
+        p_token       => 'wrong-token',
+        p_result_json => l_json,
+        p_http_status => l_status
+    );
+    DBMS_OUTPUT.PUT_LINE('Wrong token : HTTP ' || l_status);
+
+    dla_relay_pkg.get_work(
+        p_token       => dla_pkg.get_setting('RELAY_TOKEN'),
+        p_result_json => l_json,
+        p_http_status => l_status
+    );
+    DBMS_OUTPUT.PUT_LINE('Right token : HTTP ' || l_status || ' ' || DBMS_LOB.SUBSTR(l_json, 200, 1));
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        DBMS_OUTPUT.PUT_LINE('TEST FAILED: ' || SQLERRM);
+        RAISE;
+END;
+/
+
+/* ------------------------------------------------------------
+   Check 1 : Package status
+   Purpose : Expect PACKAGE and PACKAGE BODY, both VALID.
+   ------------------------------------------------------------ */
+SELECT object_type,
+       object_name,
+       status
+FROM   all_objects
+WHERE  owner = 'WKSP_WKSPPRDWORKSPACE'
+AND    object_name = 'DLA_RELAY_PKG'
+ORDER  BY object_type;
+
+/* ------------------------------------------------------------
+   Check 2 : ORDS endpoints
+   Purpose : Expect 2 rows: GET work and POST work/:extraction_id,
+             both with header X-DLA-Relay-Token bound.
+   ------------------------------------------------------------ */
+SELECT t.uri_template,
+       h.method,
+       h.source_type,
+       p.name AS header_param,
+       p.bind_variable_name
+FROM   user_ords_templates  t,
+       user_ords_handlers   h,
+       user_ords_parameters p
+WHERE  h.template_id = t.id
+AND    p.handler_id (+) = h.id
+AND    t.module_id = (SELECT m.id
+                      FROM   user_ords_modules m
+                      WHERE  m.name = 'dla.relay')
+ORDER  BY t.uri_template,
+          h.method;
+
+/* ------------------------------------------------------------
+   Check 3 : ORDS path for this schema
+   Purpose : PATTERN is the part after /ords/ in the relay's
+             address. Expect prd_workspace.
+   ------------------------------------------------------------ */
+SELECT id,
+       parsing_schema,
+       type,
+       pattern,
+       status
+FROM   user_ords_schemas;
