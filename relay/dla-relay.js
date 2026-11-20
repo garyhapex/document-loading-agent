@@ -3,7 +3,7 @@
 // Document Loading Agent -- Invoice Relay
 //
 // Author  : Claude for Gary D. Hall
-// Version : 1.0.1 (11/19/2026)
+// Version : 1.1.0 (11/19/2026)
 //
 // WHAT IT IS
 //   A small program that runs on the PC where Ollama is installed. It sits
@@ -29,14 +29,23 @@
 //   invoice, so the relay does not ask for more work until it has answered
 //   the invoice it is holding.
 //
-// WHAT IT CAN READ
-//   Images only (PNG, JPG). Ollama vision models do not take PDF files. A
-//   PDF is answered with a clear error, never silently skipped.
+// WHAT IT CAN READ (1.1.0)
+//   PDF, PNG and JPG. People upload invoices as PDFs, and a vision model
+//   can only look at pictures, so the relay turns each PDF page into a
+//   picture first and sends the pictures to the model. The database keeps
+//   the original PDF. The conversion is done by pdftoppm, a small free
+//   program from the Poppler project:
+//     winget install --id oschwartz10612.Poppler -e
+//   The relay finds pdftoppm by itself (see FINDING PDFTOPPM below). If it
+//   is not installed, a PDF is answered with a clear error that says so;
+//   pictures still work. Only the first PDF_MAX_PAGES pages are read.
 //
 // SETTINGS
 //   1. dla-relay-settings.json, in the same folder as this file:
 //        { "ords_base_url": "https://.../ords/prd_workspace",
 //          "relay_token":   "..." }
+//      Optional: "pdftoppm_path", the full path of pdftoppm.exe, only if
+//      the relay cannot find it by itself.
 //      Optional: "ollama_url" (default http://127.0.0.1:11434). The number
 //      form is used on purpose: "localhost" can resolve to the IPv6 address
 //      ::1, where Ollama does not listen (ECONNREFUSED ::1:11434).
@@ -47,7 +56,8 @@
 //   Without settings the relay says so once a minute and does nothing else.
 //
 // DEPENDENCIES
-//   Node.js only -- https, http, url, fs, path are built in. No npm packages.
+//   Node.js only -- https, http, url, fs, path, os, child_process are built
+//   in. No npm packages. pdftoppm (Poppler) is needed only for PDFs.
 //
 /*
 cd C:\Users\GHAPEX\OneDrive\Documents\GitHub\document-loading-agent
@@ -62,8 +72,10 @@ const http    = require('http');
 const { URL } = require('url');
 const fs      = require('fs');
 const path    = require('path');
+const os      = require('os');
+const { execFile, execFileSync } = require('child_process');
 
-const RELAY_VERSION = '1.0.1';
+const RELAY_VERSION = '1.1.0';
 
 // ============================================================================
 // CONFIGURATION
@@ -80,17 +92,20 @@ function loadSettings() {
                      error:       null,
                      ordsBaseUrl: raw.ords_base_url ? String(raw.ords_base_url).trim() : null,
                      relayToken:  raw.relay_token   ? String(raw.relay_token).trim()   : null,
-                     ollamaUrl:   raw.ollama_url    ? String(raw.ollama_url).trim()    : 'http://127.0.0.1:11434' };
+                     ollamaUrl:   raw.ollama_url    ? String(raw.ollama_url).trim()    : 'http://127.0.0.1:11434',
+                     pdftoppmPath: raw.pdftoppm_path ? String(raw.pdftoppm_path).trim() : null };
         } catch (err) {
             return { source: SETTINGS_FILE, error: err.message,
-                     ordsBaseUrl: null, relayToken: null, ollamaUrl: 'http://127.0.0.1:11434' };
+                     ordsBaseUrl: null, relayToken: null, ollamaUrl: 'http://127.0.0.1:11434',
+                     pdftoppmPath: null };
         }
     }
     return { source:      'environment variables',
              error:       null,
              ordsBaseUrl: process.env.DLA_ORDS_BASE_URL || null,
              relayToken:  process.env.DLA_RELAY_TOKEN   || null,
-             ollamaUrl:   process.env.DLA_OLLAMA_URL    || 'http://127.0.0.1:11434' };
+             ollamaUrl:   process.env.DLA_OLLAMA_URL    || 'http://127.0.0.1:11434',
+             pdftoppmPath: process.env.DLA_PDFTOPPM_PATH || null };
 }
 
 const SETTINGS = loadSettings();
@@ -106,6 +121,14 @@ const ORDS_TIMEOUT_MS = 60000;
 // graphics card this can be several minutes, more on the first invoice
 // after the PC starts (the model has to load).
 const OLLAMA_TIMEOUT_MS = 20 * 60 * 1000;
+
+// PDF conversion. 150 dots per inch gives a letter page of about
+// 1275 x 1650 pixels: sharp enough to read small print, small enough for
+// the model. Each extra page adds to the reading time, so only the first
+// few pages of a long PDF are sent.
+const PDF_DPI            = 150;
+const PDF_MAX_PAGES      = 3;
+const PDF_TIMEOUT_MS     = 120000;
 
 // Answer posting: tries and the wait between them.
 const ANSWER_TRIES  = 4;
@@ -184,15 +207,127 @@ function ordsHeaders() {
 }
 
 // ============================================================================
+// FINDING PDFTOPPM (1.1.0)
+// Looked for once, at start, in this order:
+//   1. "pdftoppm_path" in the settings (or DLA_PDFTOPPM_PATH).
+//   2. On the PATH (just "pdftoppm").
+//   3. Where winget puts the Poppler package:
+//        %LOCALAPPDATA%\Microsoft\WinGet\Packages\oschwartz10612.Poppler...
+//      searched a few folders deep for pdftoppm.exe.
+// Returns the command to run, or null when it is not installed.
+// ============================================================================
+function findFileDeep(dir, fileName, depth) {
+    if (depth < 0) return null;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return null; }
+    for (const e of entries) {
+        if (e.isFile() && e.name.toLowerCase() === fileName) return path.join(dir, e.name);
+    }
+    for (const e of entries) {
+        if (e.isDirectory()) {
+            const hit = findFileDeep(path.join(dir, e.name), fileName, depth - 1);
+            if (hit) return hit;
+        }
+    }
+    return null;
+}
+
+function works(command) {
+    try {
+        execFileSync(command, ['-v'], { stdio: 'ignore', timeout: 10000 });
+        return true;
+    } catch (err) {
+        // pdftoppm -v prints its version and some builds exit non-zero; a
+        // missing program fails with ENOENT instead.
+        return err.code !== 'ENOENT' && err.code !== 'EACCES';
+    }
+}
+
+function findPdftoppm() {
+    if (SETTINGS.pdftoppmPath) {
+        return fs.existsSync(SETTINGS.pdftoppmPath) ? SETTINGS.pdftoppmPath : null;
+    }
+    if (works('pdftoppm')) return 'pdftoppm';
+
+    const local = process.env.LOCALAPPDATA;
+    if (local) {
+        const packages = path.join(local, 'Microsoft', 'WinGet', 'Packages');
+        let dirs = [];
+        try { dirs = fs.readdirSync(packages); } catch (e) { /* no winget packages folder */ }
+        for (const d of dirs) {
+            if (d.toLowerCase().indexOf('poppler') !== -1) {
+                const hit = findFileDeep(path.join(packages, d), 'pdftoppm.exe', 6);
+                if (hit) return hit;
+            }
+        }
+    }
+    return null;
+}
+
+const PDFTOPPM = findPdftoppm();
+
+function isPdf(item, buffer) {
+    const mime = String(item.mime_type || '').toLowerCase();
+    const name = String(item.file_name || '').toLowerCase();
+    return mime === 'application/pdf' || name.endsWith('.pdf') ||
+           (buffer.length > 4 && buffer.slice(0, 4).toString('latin1') === '%PDF');
+}
+
+// Turns a PDF (as a Buffer) into an array of base64 PNG pictures, one per
+// page, first page first. Uses a private temporary folder and removes it.
+function pdfToImages(buffer) {
+    return new Promise((resolve, reject) => {
+        if (!PDFTOPPM) {
+            return reject(new Error('this file is a PDF and the PDF converter (pdftoppm, from Poppler) is not installed ' +
+                                    'on the relay PC. Install it with: winget install --id oschwartz10612.Poppler -e ' +
+                                    'and start the relay again.'));
+        }
+
+        let dir;
+        try {
+            dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dla-relay-'));
+            fs.writeFileSync(path.join(dir, 'in.pdf'), buffer);
+        } catch (err) {
+            return reject(new Error('could not write the PDF to a temporary folder: ' + err.message));
+        }
+
+        const cleanUp = () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* best effort */ } };
+
+        execFile(PDFTOPPM,
+                 ['-png', '-r', String(PDF_DPI), '-f', '1', '-l', String(PDF_MAX_PAGES),
+                  path.join(dir, 'in.pdf'), path.join(dir, 'page')],
+                 { timeout: PDF_TIMEOUT_MS, windowsHide: true },
+                 (err, stdout, stderr) => {
+            if (err) {
+                cleanUp();
+                return reject(new Error('the PDF could not be converted to pictures: ' +
+                                        (String(stderr || '').trim().slice(0, 300) || err.message)));
+            }
+            let images;
+            try {
+                images = fs.readdirSync(dir)
+                           .filter((f) => /^page.*\.png$/i.test(f))
+                           .sort()
+                           .map((f) => fs.readFileSync(path.join(dir, f)).toString('base64'));
+            } catch (readErr) {
+                cleanUp();
+                return reject(new Error('the converted pictures could not be read: ' + readErr.message));
+            }
+            cleanUp();
+            if (images.length === 0) {
+                return reject(new Error('the PDF converted to no pictures. It may be empty or damaged.'));
+            }
+            resolve(images);
+        });
+    });
+}
+
+// ============================================================================
 // THE MODEL
 // Sends one invoice image and the prompt to Ollama and returns the model's
 // answer text. format:"json" tells Ollama the answer must be JSON.
 // ============================================================================
-async function askModel(item) {
-    const image = String(item.image_base64 || '').replace(/\s+/g, '');   // ORDS base64 has line breaks
-    if (!image) {
-        throw new Error('the work item has no image');
-    }
+async function askModel(item, images) {
 
     const resp = await httpRequest(
         'POST',
@@ -202,7 +337,7 @@ async function askModel(item) {
           stream:   false,
           format:   'json',
           options:  { temperature: 0 },
-          messages: [ { role: 'user', content: item.prompt, images: [ image ] } ] },
+          messages: [ { role: 'user', content: item.prompt, images: images } ] },
         OLLAMA_TIMEOUT_MS);
 
     if (resp.statusCode !== 200) {
@@ -224,16 +359,31 @@ async function askModel(item) {
 
 // Does one work item and returns the answer object for the database.
 async function runWork(item) {
-    const mime = String(item.mime_type || '').toLowerCase();
-    if (!mime.startsWith('image/')) {
-        return { status:  'ERROR',
-                 message: 'The local model reads images only (PNG or JPG). This file is ' +
-                          (item.mime_type || 'of unknown type') + '.' };
-    }
-
     const started = Date.now();
     try {
-        const text = await askModel(item);
+        // The field is called image_base64 for history; it holds the whole
+        // uploaded file, picture or PDF. ORDS base64 has line breaks.
+        const fileB64 = String(item.image_base64 || '').replace(/\s+/g, '');
+        if (!fileB64) {
+            throw new Error('the work item has no file');
+        }
+        const buffer = Buffer.from(fileB64, 'base64');
+        const mime   = String(item.mime_type || '').toLowerCase();
+
+        let images;
+        if (isPdf(item, buffer)) {
+            images = await pdfToImages(buffer);
+            log('WORK', 'Extraction ' + item.extraction_id + ': PDF converted to ' + images.length +
+                        ' picture(s)' + (images.length === PDF_MAX_PAGES ? ' (first ' + PDF_MAX_PAGES + ' pages at most)' : '') + '.');
+        } else if (mime.startsWith('image/')) {
+            images = [ fileB64 ];
+        } else {
+            return { status:  'ERROR',
+                     message: 'The relay reads PDF, PNG and JPG files. This file is ' +
+                              (item.mime_type || 'of unknown type') + '.' };
+        }
+
+        const text = await askModel(item, images);
         return { status: 'SUCCESS', raw_response: text, elapsed_ms: Date.now() - started };
     } catch (err) {
         return { status: 'ERROR', message: 'Relay could not get an answer from the model: ' + err.message,
@@ -327,6 +477,8 @@ function start() {
     console.log(' Document Loading Agent -- Invoice Relay ' + RELAY_VERSION);
     console.log(' Settings : ' + SETTINGS.source);
     console.log(' Ollama   : ' + SETTINGS.ollamaUrl);
+    console.log(' PDFs     : ' + (PDFTOPPM ? 'converter found (' + PDFTOPPM + ')'
+                                           : 'converter NOT found. PDFs will be refused; pictures still work.'));
 
     let problem = null;
     if (SETTINGS.error) {

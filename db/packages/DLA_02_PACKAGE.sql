@@ -7,6 +7,10 @@
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : ADMIN, SQL Developer, F5 (Run Script)
    Run after   : DLA_01_CREATE_TABLES.sql
+   Note        : SUBMIT_DOCUMENT calls DLA_RELAY_PKG. On a brand
+                 new install, where DLA_04_RELAY_DATABASE.sql has
+                 not been run yet, the body shows a compile error
+                 here. Run DLA_04, then run this file again.
    Re-runnable : yes (CREATE OR REPLACE)
    Author      : Claude for Gary D. Hall
    Date        : 11/19/2026
@@ -23,7 +27,8 @@ ALTER SESSION SET CURRENT_SCHEMA = WKSP_WKSPPRDWORKSPACE;
    Package spec : DLA_PKG
    Purpose      : The core package behind the Document Loading
                   Agent. Working: LOG_AUDIT, GET_SETTING,
-                  SET_SETTING, PARSE_EXTRACTION. The other three
+                  SET_SETTING, SUBMIT_DOCUMENT, PARSE_EXTRACTION.
+                  The other three
                   are placeholders that raise a clear error until
                   their phase builds them.
    ------------------------------------------------------------ */
@@ -49,6 +54,18 @@ CREATE OR REPLACE PACKAGE dla_pkg AUTHID DEFINER AS
         p_setting_name   IN VARCHAR2,
         p_setting_value  IN VARCHAR2
     );
+
+    /* Working: called by the APEX upload page. Copies the file
+       the user just uploaded from APEX's temporary upload area
+       (APEX_APPLICATION_TEMP_FILES) into DLA_DOCUMENTS and sends
+       it to the chosen model: OLLAMA goes in the relay queue,
+       OCI_GENAI is read straight away. P_MODEL_CODE empty means
+       use the ACTIVE_MODEL setting. Returns the new DOCUMENT_ID.
+       Does not commit. */
+    FUNCTION submit_document (
+        p_temp_file_name  IN VARCHAR2,
+        p_model_code      IN VARCHAR2 DEFAULT NULL
+    ) RETURN NUMBER;
 
     /* Phase 2 placeholder: sends a document to the chosen model.
        Will return the new EXTRACTION_ID. */
@@ -245,6 +262,93 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
             );
             RAISE;
     END set_setting;
+
+    /* --------------------------------------------------------
+       Public  : SUBMIT_DOCUMENT
+       Purpose : The one call behind the upload page.
+                 Raises ORA-20050 for an unknown model code and
+                 ORA-20051 when the uploaded file is not found.
+       -------------------------------------------------------- */
+    FUNCTION submit_document (
+        p_temp_file_name  IN VARCHAR2,
+        p_model_code      IN VARCHAR2 DEFAULT NULL
+    ) RETURN NUMBER IS
+        l_user           dla_documents.uploaded_by%TYPE;
+        l_model          VARCHAR2(30);
+        l_file_name      dla_documents.file_name%TYPE;
+        l_mime_type      dla_documents.mime_type%TYPE;
+        l_blob           BLOB;
+        l_document_id    dla_documents.document_id%TYPE;
+        l_extraction_id  NUMBER;
+    BEGIN
+        l_user  := current_user_name;
+        l_model := UPPER(TRIM(p_model_code));
+
+        IF l_model IS NULL THEN
+            l_model := get_setting('ACTIVE_MODEL');
+        END IF;
+
+        IF l_model IS NULL OR l_model NOT IN (c_model_ollama, c_model_oci) THEN
+            RAISE_APPLICATION_ERROR(
+                -20050,
+                'DLA_PKG.SUBMIT_DOCUMENT: the model must be ' || c_model_ollama || ' or ' || c_model_oci || '.'
+            );
+        END IF;
+
+        BEGIN
+            SELECT f.filename,
+                   f.mime_type,
+                   f.blob_content
+            INTO   l_file_name,
+                   l_mime_type,
+                   l_blob
+            FROM   apex_application_temp_files f
+            WHERE  f.name = p_temp_file_name;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(
+                    -20051,
+                    'DLA_PKG.SUBMIT_DOCUMENT: no uploaded file was found. Choose a file and try again.'
+                );
+        END;
+
+        INSERT INTO dla_documents (
+            file_name,
+            mime_type,
+            file_blob,
+            file_size,
+            uploaded_by
+        ) VALUES (
+            l_file_name,
+            l_mime_type,
+            l_blob,
+            DBMS_LOB.GETLENGTH(l_blob),
+            l_user
+        )
+        RETURNING document_id INTO l_document_id;
+
+        log_audit(
+            p_action      => 'UPLOADED',
+            p_details     => l_file_name || ' uploaded by ' || l_user || ' for model ' || l_model || '.',
+            p_document_id => l_document_id
+        );
+
+        IF l_model = c_model_ollama THEN
+            l_extraction_id := dla_relay_pkg.queue_extraction(l_document_id);
+        ELSE
+            l_extraction_id := extract_document(l_document_id, l_model);
+        END IF;
+
+        RETURN l_document_id;
+    EXCEPTION
+        WHEN OTHERS THEN
+            log_audit(
+                p_action      => 'UPLOAD_ERROR',
+                p_details     => 'SUBMIT_DOCUMENT failed: ' || SQLERRM,
+                p_document_id => l_document_id
+            );
+            RAISE;
+    END submit_document;
 
     /* --------------------------------------------------------
        Public  : EXTRACT_DOCUMENT  (Phase 2 placeholder)

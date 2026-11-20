@@ -322,6 +322,9 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
                   "message":"..."}
        A SUCCESS whose raw_response is not valid JSON is stored
        as ERROR, with the raw text kept for review.
+       A valid answer is staged straight away with
+       DLA_PKG.PARSE_EXTRACTION. If staging fails, the answer is
+       still kept and the failure is in DLA_AUDIT_LOG.
        -------------------------------------------------------- */
     PROCEDURE receive_result (
         p_extraction_id   IN  NUMBER,
@@ -339,6 +342,7 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
         l_count        NUMBER;
         l_is_json      NUMBER := 0;
         l_document_id  dla_extractions.document_id%TYPE;
+        l_stg_header   NUMBER;
         l_error        VARCHAR2(4000);
     BEGIN
         p_http_status    := 200;
@@ -412,6 +416,20 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
                 p_details     => 'Extraction ' || p_extraction_id || ' answered in ' || l_elapsed || ' ms.',
                 p_document_id => l_document_id
             );
+
+            /* Stage the answer. A staging failure must not lose
+               the answer, so it is undone back to this point and
+               reported; PARSE_EXTRACTION has already logged it. */
+            SAVEPOINT before_staging;
+            BEGIN
+                l_stg_header     := dla_pkg.parse_extraction(p_extraction_id);
+                p_result_message := 'Result stored and staged as header ' || l_stg_header || '.';
+            EXCEPTION
+                WHEN OTHERS THEN
+                    l_error := SQLERRM;
+                    ROLLBACK TO before_staging;
+                    p_result_message := 'Result stored. Staging failed: ' || SUBSTR(l_error, 1, 300);
+            END;
         ELSE
             IF l_status = 'SUCCESS' THEN
                 l_error := 'The model answered, but the answer is not valid JSON.';

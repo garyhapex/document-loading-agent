@@ -22,6 +22,14 @@ Newest entries at the top. Each entry records what was done, where, and the resu
 | 14 | Ran `db/relay/DLA_06_CHECK_EXTRACTIONS.sql` | DEV | Every field correct against the sample invoice: vendor, invoice number INV-10001, invoice date 2026-11-02, due date 2026-12-02, all 3 lines (description, quantity, unit price, amount), subtotal 364.00, tax 0.00, total 364.00. Audit log shows the queue, the failed first attempt and the success. |
 | 15 | Ran `db/packages/DLA_02_PACKAGE.sql` with PARSE_EXTRACTION built (JSON_TABLE into staging) | DEV | Done, clean on the first run. Package and body VALID. |
 | 16 | Ran `db/relay/DLA_07_STAGE_LATEST_EXTRACTION.sql` | DEV | Passed. Extraction 2 staged as header 1: Prairie Fastener Supply Co. matched to vendor ID 1, INV-10001, dates 02-NOV-26 and 02-DEC-26, subtotal 364, tax 0, total 364, 3 lines (174, 78, 112). No flags. |
+| 17 | Created APEX application 300, Document Loading Agent | DEV, DEV_WORKSPACE | Done. Home, Login and Global pages. |
+| 18 | Ran `db/packages/DLA_02_PACKAGE.sql` (adds SUBMIT_DOCUMENT, the call behind the upload page) and `db/relay/DLA_04_RELAY_DATABASE.sql` (each answer is now staged automatically) | DEV, as WKSP_WKSPPRDWORKSPACE | Done, both clean. Packages VALID. Token unchanged. |
+| 19 | Built page 2, Upload Invoice, in application 300 | DEV, Page Designer | Done and run. Drop zone, model select list, Read Invoice button, Submit document process, Documents report with Refresh. Icons on regions, buttons and the menu entry. |
+| 20 | Tried to upload a PDF on page 2 | DEV, application 300 | Refused: the page only accepted PNG and JPG. Design fault: real invoices are PDFs. |
+| 21 | Relay 1.1.0: converts each PDF page to a picture with pdftoppm (Poppler) before sending it to the model | Local | Written. Tested by Claude against stand-in servers with a real sample PDF: converted, sent as a PNG, answer posted. Not yet run against DEV and Ollama. Needs Poppler installed on the PC. |
+| 22 | Installed Poppler 25.07.0 with winget; restarted the relay | Local PC | Done. Relay 1.1.0 start-up shows: PDFs converter found (pdftoppm). |
+| 23 | Page 2 changed to accept PDF, PNG and JPG; unsaved-changes warning turned off; Read Status shows plain words with an icon; Seconds counts up live; the report refreshes itself every 30 seconds only while a read is in progress | DEV, Page Designer | Done and checked in the running page. |
+| 24 | Uploaded `DLA_02_clean_fox_valley_packaging.pdf` by dragging it onto page 2 | DEV and Local PC | Passed, end to end, with nobody touching anything after the upload. Relay converted the PDF to a picture, qwen2.5vl:7b read it in 309 seconds, the answer was stored and staged automatically as header 2 with 4 lines. Every field correct: Fox Valley Packaging LLC, FVP-22310, 2026-11-05, 2026-12-05, 4 lines (840.00, 350.40, 324.00, 318.00), subtotal 1832.40, tax 128.27, total 1960.67. |
 
 ## 11/19/2026 - Phase 1: Foundation
 
