@@ -2,6 +2,17 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/19/2026 - Phase 2: AI extraction (started)
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Checked PC hardware | Local PC | 32 GB RAM, Intel Iris Xe graphics. Models run on the processor. |
+| 2 | Installed Ollama | Local PC | Done. |
+| 3 | Pulled `llama3.2-vision` (7.8 GB) and tested | Local PC | Failed. Error: unknown model architecture 'mllama'. Llama 3.2 Vision is not supported on Ollama 0.30.0 and later. Model removed. |
+| 4 | Pulled `qwen2.5vl:7b` (6.0 GB) | Local PC | Done. |
+| 5 | Tested `qwen2.5vl:7b` on `samples/invoices/DLA_01_clean_prairie_fastener.png` | Local PC | Passed. Model answered invoice number INV-10001 and total due $364.00, both correct. |
+| 6 | Wrote `db/data/DLA_03_SET_LOCAL_MODEL.sql` | - | Written. Not yet run. |
+
 ## 11/19/2026 - Phase 1: Foundation
 
 | Step | What | Where | Result |
@@ -12,5 +23,7 @@ Newest entries at the top. Each entry records what was done, where, and the resu
 | 4 | Ran `db/tables/DLA_01_CREATE_TABLES.sql` | DEV, as ADMIN | Done. 10 tables created, all VALID. DLA_SETTINGS 5 rows, DLA_VENDORS 5 rows. |
 | 5 | Ran `db/packages/DLA_02_PACKAGE.sql` | DEV, as ADMIN | Failed. Package body did not compile: PLS-00231, a private function was called inside SQL statements. |
 | 6 | Fixed `db/packages/DLA_02_PACKAGE.sql` | Local | Done. The user name is now read into a variable before the SQL statements. |
-| 7 | Rerun `db/packages/DLA_02_PACKAGE.sql` | DEV, as ADMIN | NOT YET DONE. Package body DLA_PKG is INVALID on DEV until this is run. |
+| 7 | Reran `db/packages/DLA_02_PACKAGE.sql` | DEV, as ADMIN | Done. Package and package body VALID. Test returned ACTIVE_MODEL = OLLAMA and wrote audit row PHASE1_INSTALL. |
 | 8 | Created 6 fictional sample invoices (PDF and PNG) | `samples/invoices/` | Done. |
+
+**Phase 1 complete.** Next: Phase 2, AI extraction with both models.
