@@ -2,6 +2,13 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/19/2026 - Phase 3: Checks and the agent's decision (started)
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Ran `db/tables/DLA_08_VALIDATION_COLUMNS.sql`, `db/packages/DLA_02_PACKAGE.sql` (VALIDATE_STAGING, PROCESS_STAGING, LOAD_INVOICE built) and `db/relay/DLA_04_RELAY_DATABASE.sql` (the decision now runs after every read) | DEV, as WKSP_WKSPPRDWORKSPACE | Done, clean on the first run. |
+| 2 | Ran `db/relay/DLA_09_PROCESS_STAGED.sql` | DEV | Passed. Both staged invoices were clean; the agent approved and loaded both with no person involved. Invoice 1: Prairie Fastener Supply Co. INV-10001, 364.00, 3 lines. Invoice 2: Fox Valley Packaging LLC FVP-22310, 1960.67, 4 lines. No flags. The stop-for-review path has not been exercised yet; it needs the problem invoices. |
+
 ## 11/19/2026 - Phase 2: AI extraction (started)
 
 | Step | What | Where | Result |

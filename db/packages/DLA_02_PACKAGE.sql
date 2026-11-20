@@ -6,7 +6,8 @@
                  and body). Changes no data.
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : ADMIN, SQL Developer, F5 (Run Script)
-   Run after   : DLA_01_CREATE_TABLES.sql
+   Run after   : DLA_01_CREATE_TABLES.sql and
+                 DLA_08_VALIDATION_COLUMNS.sql
    Note        : SUBMIT_DOCUMENT calls DLA_RELAY_PKG. On a brand
                  new install, where DLA_04_RELAY_DATABASE.sql has
                  not been run yet, the body shows a compile error
@@ -27,10 +28,10 @@ ALTER SESSION SET CURRENT_SCHEMA = WKSP_WKSPPRDWORKSPACE;
    Package spec : DLA_PKG
    Purpose      : The core package behind the Document Loading
                   Agent. Working: LOG_AUDIT, GET_SETTING,
-                  SET_SETTING, SUBMIT_DOCUMENT, PARSE_EXTRACTION.
-                  The other three
-                  are placeholders that raise a clear error until
-                  their phase builds them.
+                  SET_SETTING, SUBMIT_DOCUMENT, PARSE_EXTRACTION,
+                  VALIDATE_STAGING, PROCESS_STAGING, LOAD_INVOICE.
+                  EXTRACT_DOCUMENT (the OCI model) is still a
+                  placeholder that raises a clear error.
    ------------------------------------------------------------ */
 CREATE OR REPLACE PACKAGE dla_pkg AUTHID DEFINER AS
 
@@ -83,13 +84,30 @@ CREATE OR REPLACE PACKAGE dla_pkg AUTHID DEFINER AS
         p_extraction_id  IN NUMBER
     ) RETURN NUMBER;
 
-    /* Phase 3 placeholder: runs the checks and writes DLA_STG_FLAGS. */
+    /* Working: runs the checks on one staged invoice and writes
+       what it finds to DLA_STG_FLAGS (FLAG_SOURCE = CHECK). Safe
+       to run again: it replaces its own earlier flags. Does not
+       commit. */
     PROCEDURE validate_staging (
         p_stg_header_id  IN NUMBER
     );
 
-    /* Phase 3 placeholder: loads an approved invoice to the final tables.
-       Will return the new INVOICE_ID. */
+    /* Working: THE AGENT'S DECISION. Runs the checks, then:
+         no flags  -> approves the invoice itself and loads it.
+                      P_INVOICE_ID returns the new invoice.
+         any flag  -> leaves it for a person to review.
+                      P_INVOICE_ID returns empty.
+       P_FLAG_COUNT returns how many flags there are. Only works
+       on a staged invoice still PENDING. Does not commit. */
+    PROCEDURE process_staging (
+        p_stg_header_id  IN  NUMBER,
+        p_invoice_id     OUT NUMBER,
+        p_flag_count     OUT NUMBER
+    );
+
+    /* Working: copies an APPROVED staged invoice into the final
+       tables DLA_INVOICES and DLA_INVOICE_LINES and writes the
+       audit entry. Returns the new INVOICE_ID. Does not commit. */
     FUNCTION load_invoice (
         p_stg_header_id  IN NUMBER
     ) RETURN NUMBER;
@@ -370,21 +388,38 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
         p_stg_header_id  IN NUMBER,
         p_field_name     IN VARCHAR2,
         p_severity       IN VARCHAR2,
-        p_message        IN VARCHAR2
+        p_message        IN VARCHAR2,
+        p_flag_source    IN VARCHAR2 DEFAULT 'PARSE',
+        p_stg_line_id    IN NUMBER   DEFAULT NULL
     ) IS
     BEGIN
         INSERT INTO dla_stg_flags (
             stg_header_id,
+            stg_line_id,
             field_name,
             severity,
-            message
+            message,
+            flag_source
         ) VALUES (
             p_stg_header_id,
+            p_stg_line_id,
             p_field_name,
             p_severity,
-            SUBSTR(p_message, 1, 1000)
+            SUBSTR(p_message, 1, 1000),
+            p_flag_source
         );
     END add_flag;
+
+    /* --------------------------------------------------------
+       Private : MONEY
+       Purpose : A number as text for messages, e.g. 4,305.30.
+       -------------------------------------------------------- */
+    FUNCTION money (
+        p_number  IN NUMBER
+    ) RETURN VARCHAR2 IS
+    BEGIN
+        RETURN TO_CHAR(p_number, 'FM999G999G999G990D00');
+    END money;
 
     /* --------------------------------------------------------
        Public  : PARSE_EXTRACTION
@@ -609,24 +644,411 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
     END parse_extraction;
 
     /* --------------------------------------------------------
-       Public  : VALIDATE_STAGING  (Phase 3 placeholder)
+       Public  : VALIDATE_STAGING
+       Checks  : 1. Required fields are there: vendor, invoice
+                    number, invoice date, total.
+                 2. The vendor is in DLA_VENDORS.
+                 3. The invoice is not a duplicate: not already
+                    loaded, and not already waiting from another
+                    document.
+                 4. There is at least one line.
+                 5. Each line: quantity x unit price = amount.
+                 6. The lines add up to the subtotal.
+                 7. Subtotal + tax = total.
+                 8. The due date is not before the invoice date
+                    (WARNING).
+                 Differences up to the TOTAL_TOLERANCE setting are
+                 allowed, for rounding.
+                 Raises ORA-20060 if the staged invoice does not
+                 exist.
        -------------------------------------------------------- */
     PROCEDURE validate_staging (
         p_stg_header_id  IN NUMBER
     ) IS
+        l_h           dla_stg_headers%ROWTYPE;
+        l_tolerance   NUMBER;
+        l_count       NUMBER;
+        l_line_count  NUMBER;
+        l_line_sum    NUMBER;
+        l_expected    NUMBER;
     BEGIN
-        not_built_yet('VALIDATE_STAGING', 'Phase 3');
+        BEGIN
+            SELECT h.*
+            INTO   l_h
+            FROM   dla_stg_headers h
+            WHERE  h.stg_header_id = p_stg_header_id;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(
+                    -20060,
+                    'DLA_PKG.VALIDATE_STAGING: there is no staged invoice ' || p_stg_header_id || '.'
+                );
+        END;
+
+        /* The tolerance setting is text such as 0.01. If it cannot
+           be read as a number, one cent is used. */
+        BEGIN
+            l_tolerance := TO_NUMBER(get_setting('TOTAL_TOLERANCE'));
+        EXCEPTION
+            WHEN VALUE_ERROR THEN
+                l_tolerance := 0.01;
+        END;
+        l_tolerance := NVL(l_tolerance, 0.01);
+
+        /* Start clean: remove the flags from an earlier run of these checks. */
+        DELETE FROM dla_stg_flags f
+        WHERE  f.stg_header_id = p_stg_header_id
+        AND    f.flag_source   = 'CHECK';
+
+        /* 1. Required fields */
+        IF l_h.vendor_name IS NULL THEN
+            add_flag(p_stg_header_id, 'VENDOR_NAME', 'ERROR', 'The vendor name is missing.', 'CHECK');
+        END IF;
+        IF l_h.invoice_number IS NULL THEN
+            add_flag(p_stg_header_id, 'INVOICE_NUMBER', 'ERROR', 'The invoice number is missing.', 'CHECK');
+        END IF;
+        IF l_h.invoice_date IS NULL THEN
+            add_flag(p_stg_header_id, 'INVOICE_DATE', 'ERROR', 'The invoice date is missing.', 'CHECK');
+        END IF;
+        IF l_h.total IS NULL THEN
+            add_flag(p_stg_header_id, 'TOTAL', 'ERROR', 'The invoice total is missing.', 'CHECK');
+        END IF;
+
+        /* 2. Known vendor */
+        IF l_h.vendor_name IS NOT NULL AND l_h.vendor_id IS NULL THEN
+            add_flag(p_stg_header_id, 'VENDOR_NAME', 'ERROR',
+                     'The vendor "' || l_h.vendor_name || '" is not in the vendor list.', 'CHECK');
+        END IF;
+
+        /* 3. Duplicate */
+        IF l_h.vendor_id IS NOT NULL AND l_h.invoice_number IS NOT NULL THEN
+            SELECT COUNT(*)
+            INTO   l_count
+            FROM   dla_invoices i
+            WHERE  i.vendor_id      = l_h.vendor_id
+            AND    i.invoice_number = l_h.invoice_number;
+
+            IF l_count > 0 THEN
+                add_flag(p_stg_header_id, 'INVOICE_NUMBER', 'ERROR',
+                         'Invoice ' || l_h.invoice_number || ' from this vendor has already been loaded. This looks like a duplicate.',
+                         'CHECK');
+            ELSE
+                SELECT COUNT(*)
+                INTO   l_count
+                FROM   dla_stg_headers h
+                WHERE  h.vendor_id      = l_h.vendor_id
+                AND    h.invoice_number = l_h.invoice_number
+                AND    h.document_id   <> l_h.document_id
+                AND    h.stg_header_id  < p_stg_header_id
+                AND    h.review_status <> 'REJECTED';
+
+                IF l_count > 0 THEN
+                    add_flag(p_stg_header_id, 'INVOICE_NUMBER', 'ERROR',
+                             'Invoice ' || l_h.invoice_number || ' from this vendor is already waiting from another document. This looks like a duplicate.',
+                             'CHECK');
+                END IF;
+            END IF;
+        END IF;
+
+        /* 4. At least one line, and the sum of the lines */
+        SELECT COUNT(*),
+               NVL(SUM(l.amount), 0)
+        INTO   l_line_count,
+               l_line_sum
+        FROM   dla_stg_lines l
+        WHERE  l.stg_header_id = p_stg_header_id;
+
+        IF l_line_count = 0 THEN
+            add_flag(p_stg_header_id, 'LINE_ITEMS', 'ERROR', 'No invoice lines were read.', 'CHECK');
+        END IF;
+
+        /* 5. Each line: quantity x unit price = amount */
+        FOR r IN (SELECT l.stg_line_id,
+                         l.line_number,
+                         l.quantity,
+                         l.unit_price,
+                         l.amount
+                  FROM   dla_stg_lines l
+                  WHERE  l.stg_header_id = p_stg_header_id
+                  ORDER  BY l.line_number)
+        LOOP
+            IF r.amount IS NULL THEN
+                add_flag(p_stg_header_id, 'AMOUNT', 'ERROR',
+                         'Line ' || r.line_number || ': the amount is missing.', 'CHECK', r.stg_line_id);
+            ELSIF r.quantity IS NOT NULL
+              AND r.unit_price IS NOT NULL
+              AND ABS(ROUND(r.quantity * r.unit_price, 2) - r.amount) > l_tolerance
+            THEN
+                add_flag(p_stg_header_id, 'AMOUNT', 'ERROR',
+                         'Line ' || r.line_number || ': ' || r.quantity || ' x ' || money(r.unit_price)
+                         || ' is ' || money(ROUND(r.quantity * r.unit_price, 2))
+                         || ', but the amount says ' || money(r.amount) || '.',
+                         'CHECK', r.stg_line_id);
+            END IF;
+        END LOOP;
+
+        /* 6. The lines add up to the subtotal */
+        IF l_line_count > 0
+           AND l_h.subtotal IS NOT NULL
+           AND ABS(l_line_sum - l_h.subtotal) > l_tolerance
+        THEN
+            add_flag(p_stg_header_id, 'SUBTOTAL', 'ERROR',
+                     'The lines add up to ' || money(l_line_sum) || ', but the subtotal says ' || money(l_h.subtotal) || '.',
+                     'CHECK');
+        END IF;
+
+        /* 7. Subtotal + tax = total */
+        IF l_h.total IS NOT NULL AND l_line_count > 0 THEN
+            l_expected := NVL(l_h.subtotal, l_line_sum) + NVL(l_h.tax, 0);
+            IF ABS(l_expected - l_h.total) > l_tolerance THEN
+                add_flag(p_stg_header_id, 'TOTAL', 'ERROR',
+                         'Subtotal ' || money(NVL(l_h.subtotal, l_line_sum)) || ' plus tax ' || money(NVL(l_h.tax, 0))
+                         || ' is ' || money(l_expected) || ', but the total says ' || money(l_h.total) || '.',
+                         'CHECK');
+            END IF;
+        END IF;
+
+        /* 8. Due date not before the invoice date */
+        IF l_h.invoice_date IS NOT NULL
+           AND l_h.due_date IS NOT NULL
+           AND l_h.due_date < l_h.invoice_date
+        THEN
+            add_flag(p_stg_header_id, 'DUE_DATE', 'WARNING',
+                     'The due date is before the invoice date.', 'CHECK');
+        END IF;
+
+        SELECT COUNT(*)
+        INTO   l_count
+        FROM   dla_stg_flags f
+        WHERE  f.stg_header_id = p_stg_header_id;
+
+        log_audit(
+            p_action      => 'CHECKED',
+            p_details     => 'Staged invoice ' || p_stg_header_id || ' checked: ' || l_count || ' flag(s).',
+            p_document_id => l_h.document_id
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            log_audit(
+                p_action      => 'CHECK_ERROR',
+                p_details     => 'VALIDATE_STAGING failed for staged invoice ' || p_stg_header_id || ': ' || SQLERRM,
+                p_document_id => l_h.document_id
+            );
+            RAISE;
     END validate_staging;
 
     /* --------------------------------------------------------
-       Public  : LOAD_INVOICE  (Phase 3 placeholder)
+       Public  : PROCESS_STAGING
+       Purpose : The agent's decision. See the spec.
+                 Raises ORA-20061 if the staged invoice does not
+                 exist or is no longer PENDING.
+       -------------------------------------------------------- */
+    PROCEDURE process_staging (
+        p_stg_header_id  IN  NUMBER,
+        p_invoice_id     OUT NUMBER,
+        p_flag_count     OUT NUMBER
+    ) IS
+        l_document_id    dla_stg_headers.document_id%TYPE;
+        l_review_status  dla_stg_headers.review_status%TYPE;
+    BEGIN
+        p_invoice_id := NULL;
+        p_flag_count := NULL;
+
+        BEGIN
+            SELECT h.document_id,
+                   h.review_status
+            INTO   l_document_id,
+                   l_review_status
+            FROM   dla_stg_headers h
+            WHERE  h.stg_header_id = p_stg_header_id;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(
+                    -20061,
+                    'DLA_PKG.PROCESS_STAGING: there is no staged invoice ' || p_stg_header_id || '.'
+                );
+        END;
+
+        IF l_review_status <> 'PENDING' THEN
+            RAISE_APPLICATION_ERROR(
+                -20061,
+                'DLA_PKG.PROCESS_STAGING: staged invoice ' || p_stg_header_id
+                || ' is already ' || l_review_status || '.'
+            );
+        END IF;
+
+        validate_staging(p_stg_header_id);
+
+        SELECT COUNT(*)
+        INTO   p_flag_count
+        FROM   dla_stg_flags f
+        WHERE  f.stg_header_id = p_stg_header_id;
+
+        IF p_flag_count = 0 THEN
+            UPDATE dla_stg_headers h
+            SET    h.review_status  = 'APPROVED',
+                   h.reviewed_by    = 'AGENT',
+                   h.reviewed_on    = SYSDATE,
+                   h.review_comment = 'All checks passed. Approved automatically.'
+            WHERE  h.stg_header_id  = p_stg_header_id;
+
+            log_audit(
+                p_action      => 'AUTO_APPROVED',
+                p_details     => 'Staged invoice ' || p_stg_header_id || ' passed every check and was approved by the agent.',
+                p_document_id => l_document_id
+            );
+
+            p_invoice_id := load_invoice(p_stg_header_id);
+        ELSE
+            UPDATE dla_documents d
+            SET    d.status      = 'IN_REVIEW'
+            WHERE  d.document_id = l_document_id;
+
+            log_audit(
+                p_action      => 'NEEDS_REVIEW',
+                p_details     => 'Staged invoice ' || p_stg_header_id || ' has ' || p_flag_count
+                                 || ' flag(s) and is waiting for a person.',
+                p_document_id => l_document_id
+            );
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            log_audit(
+                p_action      => 'PROCESS_ERROR',
+                p_details     => 'PROCESS_STAGING failed for staged invoice ' || p_stg_header_id || ': ' || SQLERRM,
+                p_document_id => l_document_id
+            );
+            RAISE;
+    END process_staging;
+
+    /* --------------------------------------------------------
+       Public  : LOAD_INVOICE
+       Purpose : Copy an APPROVED staged invoice to the final
+                 tables. Raises ORA-20070 if it does not exist,
+                 is not APPROVED, was already loaded, or is
+                 missing a field the final table requires.
        -------------------------------------------------------- */
     FUNCTION load_invoice (
         p_stg_header_id  IN NUMBER
     ) RETURN NUMBER IS
+        l_h           dla_stg_headers%ROWTYPE;
+        l_user        dla_invoices.loaded_by%TYPE;
+        l_count       NUMBER;
+        l_invoice_id  dla_invoices.invoice_id%TYPE;
+        l_line_count  NUMBER;
     BEGIN
-        not_built_yet('LOAD_INVOICE', 'Phase 3');
-        RETURN NULL;
+        l_user := current_user_name;
+
+        BEGIN
+            SELECT h.*
+            INTO   l_h
+            FROM   dla_stg_headers h
+            WHERE  h.stg_header_id = p_stg_header_id;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(
+                    -20070,
+                    'DLA_PKG.LOAD_INVOICE: there is no staged invoice ' || p_stg_header_id || '.'
+                );
+        END;
+
+        IF l_h.review_status <> 'APPROVED' THEN
+            RAISE_APPLICATION_ERROR(
+                -20070,
+                'DLA_PKG.LOAD_INVOICE: staged invoice ' || p_stg_header_id || ' is '
+                || l_h.review_status || ', not APPROVED.'
+            );
+        END IF;
+
+        SELECT COUNT(*)
+        INTO   l_count
+        FROM   dla_invoices i
+        WHERE  i.stg_header_id = p_stg_header_id;
+
+        IF l_count > 0 THEN
+            RAISE_APPLICATION_ERROR(
+                -20070,
+                'DLA_PKG.LOAD_INVOICE: staged invoice ' || p_stg_header_id || ' has already been loaded.'
+            );
+        END IF;
+
+        IF l_h.vendor_id IS NULL
+           OR l_h.invoice_number IS NULL
+           OR l_h.invoice_date IS NULL
+           OR l_h.total IS NULL
+        THEN
+            RAISE_APPLICATION_ERROR(
+                -20070,
+                'DLA_PKG.LOAD_INVOICE: staged invoice ' || p_stg_header_id
+                || ' cannot be loaded. It needs a known vendor, an invoice number, an invoice date and a total.'
+            );
+        END IF;
+
+        INSERT INTO dla_invoices (
+            vendor_id,
+            invoice_number,
+            invoice_date,
+            due_date,
+            subtotal,
+            tax,
+            total,
+            document_id,
+            stg_header_id,
+            loaded_by
+        ) VALUES (
+            l_h.vendor_id,
+            l_h.invoice_number,
+            l_h.invoice_date,
+            l_h.due_date,
+            l_h.subtotal,
+            l_h.tax,
+            l_h.total,
+            l_h.document_id,
+            p_stg_header_id,
+            l_user
+        )
+        RETURNING invoice_id INTO l_invoice_id;
+
+        INSERT INTO dla_invoice_lines (
+            invoice_id,
+            line_number,
+            description,
+            quantity,
+            unit_price,
+            amount
+        )
+        SELECT l_invoice_id,
+               l.line_number,
+               l.description,
+               l.quantity,
+               l.unit_price,
+               l.amount
+        FROM   dla_stg_lines l
+        WHERE  l.stg_header_id = p_stg_header_id;
+
+        l_line_count := SQL%ROWCOUNT;
+
+        UPDATE dla_documents d
+        SET    d.status      = 'LOADED'
+        WHERE  d.document_id = l_h.document_id;
+
+        log_audit(
+            p_action      => 'LOADED',
+            p_details     => 'Invoice ' || l_h.invoice_number || ' loaded as invoice ' || l_invoice_id
+                             || ' with ' || l_line_count || ' line(s), total ' || money(l_h.total)
+                             || '. Approved by ' || l_h.reviewed_by || '.',
+            p_document_id => l_h.document_id
+        );
+
+        RETURN l_invoice_id;
+    EXCEPTION
+        WHEN OTHERS THEN
+            log_audit(
+                p_action      => 'LOAD_ERROR',
+                p_details     => 'LOAD_INVOICE failed for staged invoice ' || p_stg_header_id || ': ' || SQLERRM,
+                p_document_id => l_h.document_id
+            );
+            RAISE;
     END load_invoice;
 
 END dla_pkg;

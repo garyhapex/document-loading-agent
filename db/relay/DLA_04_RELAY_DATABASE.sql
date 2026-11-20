@@ -323,8 +323,11 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
        A SUCCESS whose raw_response is not valid JSON is stored
        as ERROR, with the raw text kept for review.
        A valid answer is staged straight away with
-       DLA_PKG.PARSE_EXTRACTION. If staging fails, the answer is
-       still kept and the failure is in DLA_AUDIT_LOG.
+       DLA_PKG.PARSE_EXTRACTION, then checked and decided with
+       DLA_PKG.PROCESS_STAGING: a clean invoice is approved and
+       loaded by the agent, anything flagged waits for a person.
+       If staging or checking fails, what was done before it is
+       kept and the failure is in DLA_AUDIT_LOG.
        -------------------------------------------------------- */
     PROCEDURE receive_result (
         p_extraction_id   IN  NUMBER,
@@ -343,6 +346,8 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
         l_is_json      NUMBER := 0;
         l_document_id  dla_extractions.document_id%TYPE;
         l_stg_header   NUMBER;
+        l_invoice_id   NUMBER;
+        l_flag_count   NUMBER;
         l_error        VARCHAR2(4000);
     BEGIN
         p_http_status    := 200;
@@ -428,8 +433,33 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
                 WHEN OTHERS THEN
                     l_error := SQLERRM;
                     ROLLBACK TO before_staging;
+                    l_stg_header     := NULL;
                     p_result_message := 'Result stored. Staging failed: ' || SUBSTR(l_error, 1, 300);
             END;
+
+            /* The agent's decision: check it, then load it or
+               leave it for a person. A failure here keeps the
+               staged rows. */
+            IF l_stg_header IS NOT NULL THEN
+                SAVEPOINT before_decision;
+                BEGIN
+                    dla_pkg.process_staging(
+                        p_stg_header_id => l_stg_header,
+                        p_invoice_id    => l_invoice_id,
+                        p_flag_count    => l_flag_count
+                    );
+                    IF l_invoice_id IS NOT NULL THEN
+                        p_result_message := 'Read, checked and loaded as invoice ' || l_invoice_id || '. No person needed.';
+                    ELSE
+                        p_result_message := 'Read and checked: ' || l_flag_count || ' flag(s). Waiting for a person to review.';
+                    END IF;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        l_error := SQLERRM;
+                        ROLLBACK TO before_decision;
+                        p_result_message := 'Result stored and staged. Checking failed: ' || SUBSTR(l_error, 1, 300);
+                END;
+            END IF;
         ELSE
             IF l_status = 'SUCCESS' THEN
                 l_error := 'The model answered, but the answer is not valid JSON.';
