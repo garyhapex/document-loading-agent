@@ -130,7 +130,10 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
         p_document_id  IN NUMBER   DEFAULT NULL
     ) IS
         PRAGMA AUTONOMOUS_TRANSACTION;
+        l_user  dla_audit_log.performed_by%TYPE;
     BEGIN
+        l_user := current_user_name;
+
         INSERT INTO dla_audit_log (
             document_id,
             action,
@@ -140,7 +143,7 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
             p_document_id,
             SUBSTR(p_action, 1, 50),
             SUBSTR(p_details, 1, 4000),
-            current_user_name
+            l_user
         );
         COMMIT;
     EXCEPTION
@@ -200,7 +203,10 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
         p_setting_value  IN VARCHAR2
     ) IS
         l_name  dla_settings.setting_name%TYPE := UPPER(TRIM(p_setting_name));
+        l_user  dla_settings.updated_by%TYPE;
     BEGIN
+        l_user := current_user_name;
+
         IF l_name = 'ACTIVE_MODEL'
            AND (p_setting_value IS NULL
                 OR p_setting_value NOT IN (c_model_ollama, c_model_oci))
@@ -213,7 +219,7 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
 
         UPDATE dla_settings s
         SET    s.setting_value = p_setting_value,
-               s.updated_by    = current_user_name,
+               s.updated_by    = l_user,
                s.updated_on    = SYSDATE
         WHERE  s.setting_name  = l_name;
 
