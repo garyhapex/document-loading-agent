@@ -17,3 +17,7 @@ ngrok.yml
 *.log
 Thumbs.db
 desktop.ini
+
+# Relay settings hold the relay token - never commit
+relay/dla-relay-settings.json
+ecosystem.config.js
