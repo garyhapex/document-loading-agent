@@ -12,6 +12,8 @@
                  reader (Google Gemini 2.5 Flash on OCI, the PDF
                  sent as a document, no relay). Settings it reads
                  come from DLA_13_OCI_MODEL.sql.
+                 READ_WAITING_DOCUMENTS added for the APEX
+                 automation (watched folder -> OCI).
    Note        : SUBMIT_DOCUMENT calls DLA_RELAY_PKG. On a brand
                  new install, where DLA_04_RELAY_DATABASE.sql has
                  not been run yet, the body shows a compile error
@@ -83,6 +85,16 @@ CREATE OR REPLACE PACKAGE dla_pkg AUTHID DEFINER AS
     FUNCTION extract_document (
         p_document_id  IN NUMBER,
         p_model_code   IN VARCHAR2 DEFAULT NULL
+    ) RETURN NUMBER;
+
+    /* Working (11/20/2026): called by the APEX automation
+       "Read waiting documents" every minute. Finds documents that
+       arrived from the watched folder while WATCH_MODEL was
+       OCI_GENAI (status UPLOADED, no read yet) and sends each one
+       to EXTRACT_DOCUMENT, oldest first, committing after each.
+       P_MAX_DOCUMENTS caps one run. Returns how many were read. */
+    FUNCTION read_waiting_documents (
+        p_max_documents  IN NUMBER DEFAULT 20
     ) RETURN NUMBER;
 
     /* Working: reads the model's JSON for one extraction with
@@ -721,6 +733,55 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
 
         RETURN l_extraction_id;
     END extract_document;
+
+    /* --------------------------------------------------------
+       Public  : READ_WAITING_DOCUMENTS   (the automation's work)
+       Purpose : The watched folder cannot call OCI itself (no
+                 APEX session in ORDS), so RECEIVE_DOCUMENT leaves
+                 an OCI-bound file as UPLOADED with no read, and
+                 this picks it up from inside an APEX automation,
+                 which does have a session. One commit per
+                 document, so a failure on one does not undo the
+                 others; a failed read is marked ERROR by
+                 EXTRACT_DOCUMENT and is not picked up again.
+       -------------------------------------------------------- */
+    FUNCTION read_waiting_documents (
+        p_max_documents  IN NUMBER DEFAULT 20
+    ) RETURN NUMBER IS
+        l_done           NUMBER := 0;
+        l_extraction_id  NUMBER;
+    BEGIN
+        FOR r IN (SELECT d.document_id,
+                         d.file_name
+                  FROM   dla_documents d
+                  WHERE  d.status = 'UPLOADED'
+                  AND    NOT EXISTS (SELECT 1
+                                     FROM   dla_extractions e
+                                     WHERE  e.document_id = d.document_id)
+                  ORDER  BY d.document_id) LOOP
+            EXIT WHEN l_done >= NVL(p_max_documents, 20);
+            BEGIN
+                l_extraction_id := extract_document(r.document_id, c_model_oci);
+                COMMIT;
+                l_done := l_done + 1;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    ROLLBACK;
+                    log_audit(
+                        p_action      => 'EXTRACTION_ERROR',
+                        p_details     => 'READ_WAITING_DOCUMENTS could not start a read for '
+                                         || r.file_name || ': ' || SQLERRM,
+                        p_document_id => r.document_id
+                    );
+                    /* Mark it so it is not tried every minute for ever. */
+                    UPDATE dla_documents d
+                    SET    d.status = 'ERROR'
+                    WHERE  d.document_id = r.document_id;
+                    COMMIT;
+            END;
+        END LOOP;
+        RETURN l_done;
+    END read_waiting_documents;
 
     /* --------------------------------------------------------
        Private : ADD_FLAG

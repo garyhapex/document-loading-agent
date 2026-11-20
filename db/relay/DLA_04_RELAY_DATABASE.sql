@@ -23,9 +23,16 @@
                  folder it watches and sends it in. The file is
                  stored in DLA_DOCUMENTS exactly as an upload on
                  page 2 is, and queued for the local model.
-   Re-run note : Re-running keeps the token and the prompt
-                 (they are only inserted when missing). Re-run
-                 this whole file after any change to it.
+                 11/20/2026 (later): RECEIVE_DOCUMENT reads the
+                 setting WATCH_MODEL (OLLAMA or OCI_GENAI) to
+                 decide which reader the folder feeds. The
+                 setting is added here with default OLLAMA if
+                 missing; db\data\DLA_16_WATCH_MODEL.sql
+                 changes it.
+   Re-run note : Re-running keeps the token, the prompt and
+                 WATCH_MODEL (they are only inserted when
+                 missing). Re-run this whole file after any
+                 change to it.
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : WKSP_WKSPPRDWORKSPACE  <-- NOT ADMIN.
                  ORDS modules belong to the user that defines
@@ -79,6 +86,15 @@ FROM   dual
 WHERE  NOT EXISTS (SELECT 1
                    FROM   dla_settings s
                    WHERE  s.setting_name = 'EXTRACTION_PROMPT');
+
+INSERT INTO dla_settings (setting_name, setting_value, description)
+SELECT 'WATCH_MODEL',
+       'OLLAMA',
+       'Which reader the watched folder feeds: OLLAMA (the relay) or OCI_GENAI (the APEX automation)'
+FROM   dual
+WHERE  NOT EXISTS (SELECT 1
+                   FROM   dla_settings s
+                   WHERE  s.setting_name = 'WATCH_MODEL');
 
 COMMIT;
 
@@ -558,6 +574,7 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
         l_blob           BLOB;
         l_document_id    dla_documents.document_id%TYPE;
         l_extraction_id  NUMBER;
+        l_watch_model    VARCHAR2(30);
         l_error          VARCHAR2(4000);
     BEGIN
         p_http_status    := 200;
@@ -641,11 +658,24 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
             p_document_id => l_document_id
         );
 
-        l_extraction_id := queue_extraction(l_document_id);
+        /* WATCH_MODEL decides which reader the folder feeds.
+           OLLAMA: queue it for the relay, as before.
+           OCI_GENAI: leave it UPLOADED with no read; the APEX
+           automation "Read waiting documents" picks it up within
+           a minute and calls DLA_PKG.EXTRACT_DOCUMENT (which needs
+           the APEX session the automation has and ORDS does not). */
+        l_watch_model := UPPER(TRIM(dla_pkg.get_setting('WATCH_MODEL')));
 
-        p_document_id    := l_document_id;
-        p_result_message := 'Stored as document ' || l_document_id
-                            || ' and queued as extraction ' || l_extraction_id || '.';
+        IF l_watch_model = dla_pkg.c_model_oci THEN
+            p_document_id    := l_document_id;
+            p_result_message := 'Stored as document ' || l_document_id
+                                || '. Waiting for the OCI reader (within a minute).';
+        ELSE
+            l_extraction_id  := queue_extraction(l_document_id);
+            p_document_id    := l_document_id;
+            p_result_message := 'Stored as document ' || l_document_id
+                                || ' and queued as extraction ' || l_extraction_id || ' for the local model.';
+        END IF;
     EXCEPTION
         WHEN OTHERS THEN
             l_error := SQLERRM;
