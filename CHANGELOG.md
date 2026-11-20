@@ -20,6 +20,8 @@ Newest entries at the top. Each entry records what was done, where, and the resu
 | 12 | Fixed `relay/dla-relay.js`, now 1.0.1 | Local | Done. Ollama address changed to http://127.0.0.1:11434. |
 | 13 | Second run of `relay/dla-relay.js` 1.0.1, sample invoice queued again as extraction 2 | Local PC and DEV | Passed, end to end. Relay picked up the invoice from ORDS, qwen2.5vl:7b read it in 262 seconds, the relay posted the answer, the database stored it as valid JSON with status SUCCESS. |
 | 14 | Ran `db/relay/DLA_06_CHECK_EXTRACTIONS.sql` | DEV | Every field correct against the sample invoice: vendor, invoice number INV-10001, invoice date 2026-11-02, due date 2026-12-02, all 3 lines (description, quantity, unit price, amount), subtotal 364.00, tax 0.00, total 364.00. Audit log shows the queue, the failed first attempt and the success. |
+| 15 | Ran `db/packages/DLA_02_PACKAGE.sql` with PARSE_EXTRACTION built (JSON_TABLE into staging) | DEV | Done, clean on the first run. Package and body VALID. |
+| 16 | Ran `db/relay/DLA_07_STAGE_LATEST_EXTRACTION.sql` | DEV | Passed. Extraction 2 staged as header 1: Prairie Fastener Supply Co. matched to vendor ID 1, INV-10001, dates 02-NOV-26 and 02-DEC-26, subtotal 364, tax 0, total 364, 3 lines (174, 78, 112). No flags. |
 
 ## 11/19/2026 - Phase 1: Foundation
 

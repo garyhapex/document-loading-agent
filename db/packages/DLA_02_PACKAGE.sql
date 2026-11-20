@@ -2,8 +2,8 @@
    Script      : DLA_02_PACKAGE.sql
    Project     : Document Loading Agent (DLA) - Phase 1
    Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
-   Changes     : YES - creates package DLA_PKG (spec and body)
-                 and writes one row to DLA_AUDIT_LOG as a test.
+   Changes     : YES - creates or replaces package DLA_PKG (spec
+                 and body). Changes no data.
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : ADMIN, SQL Developer, F5 (Run Script)
    Run after   : DLA_01_CREATE_TABLES.sql
@@ -21,11 +21,11 @@ ALTER SESSION SET CURRENT_SCHEMA = WKSP_WKSPPRDWORKSPACE;
 
 /* ------------------------------------------------------------
    Package spec : DLA_PKG
-   Purpose      : The one package behind the Document Loading
-                  Agent. Phase 1 delivers the working utilities
-                  (LOG_AUDIT, GET_SETTING, SET_SETTING). The
-                  other four are placeholders that raise a clear
-                  error until their phase builds them.
+   Purpose      : The core package behind the Document Loading
+                  Agent. Working: LOG_AUDIT, GET_SETTING,
+                  SET_SETTING, PARSE_EXTRACTION. The other three
+                  are placeholders that raise a clear error until
+                  their phase builds them.
    ------------------------------------------------------------ */
 CREATE OR REPLACE PACKAGE dla_pkg AUTHID DEFINER AS
 
@@ -57,8 +57,11 @@ CREATE OR REPLACE PACKAGE dla_pkg AUTHID DEFINER AS
         p_model_code   IN VARCHAR2 DEFAULT NULL
     ) RETURN NUMBER;
 
-    /* Phase 2 placeholder: parses the JSON into staging.
-       Will return the new STG_HEADER_ID. */
+    /* Working: reads the model's JSON for one extraction with
+       JSON_TABLE and writes it to the staging tables. Returns
+       the new STG_HEADER_ID. Does not commit. Running it again
+       for the same extraction replaces that extraction's
+       staging rows. */
     FUNCTION parse_extraction (
         p_extraction_id  IN NUMBER
     ) RETURN NUMBER;
@@ -256,14 +259,249 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
     END extract_document;
 
     /* --------------------------------------------------------
-       Public  : PARSE_EXTRACTION  (Phase 2 placeholder)
+       Private : ADD_FLAG
+       Purpose : Write one row to DLA_STG_FLAGS.
+       -------------------------------------------------------- */
+    PROCEDURE add_flag (
+        p_stg_header_id  IN NUMBER,
+        p_field_name     IN VARCHAR2,
+        p_severity       IN VARCHAR2,
+        p_message        IN VARCHAR2
+    ) IS
+    BEGIN
+        INSERT INTO dla_stg_flags (
+            stg_header_id,
+            field_name,
+            severity,
+            message
+        ) VALUES (
+            p_stg_header_id,
+            p_field_name,
+            p_severity,
+            SUBSTR(p_message, 1, 1000)
+        );
+    END add_flag;
+
+    /* --------------------------------------------------------
+       Public  : PARSE_EXTRACTION
+       Purpose : Turn the model's JSON into staging rows.
+                 1. Header fields come out with JSON_TABLE. Each
+                    date and amount is read twice: as text, and
+                    converted. If the text is there but will not
+                    convert, the field is left empty and a
+                    WARNING flag says what the model returned.
+                 2. The vendor name is matched to DLA_VENDORS
+                    (exact name, ignoring case). No match leaves
+                    VENDOR_ID empty; the validation step reports
+                    it.
+                 3. Lines come out with JSON_TABLE on
+                    line_items[*].
+                 Raises ORA-20040 if the extraction does not
+                 exist or has no successful JSON to parse.
        -------------------------------------------------------- */
     FUNCTION parse_extraction (
         p_extraction_id  IN NUMBER
     ) RETURN NUMBER IS
+        l_user            dla_stg_headers.created_by%TYPE;
+        l_document_id     dla_extractions.document_id%TYPE;
+        l_status          dla_extractions.status%TYPE;
+        l_has_json        NUMBER;
+        l_vendor_name     dla_stg_headers.vendor_name%TYPE;
+        l_vendor_id       dla_stg_headers.vendor_id%TYPE;
+        l_invoice_number  dla_stg_headers.invoice_number%TYPE;
+        l_inv_date_txt    VARCHAR2(100);
+        l_due_date_txt    VARCHAR2(100);
+        l_subtotal_txt    VARCHAR2(100);
+        l_tax_txt         VARCHAR2(100);
+        l_total_txt       VARCHAR2(100);
+        l_invoice_date    DATE;
+        l_due_date        DATE;
+        l_subtotal        NUMBER;
+        l_tax             NUMBER;
+        l_total           NUMBER;
+        l_stg_header_id   dla_stg_headers.stg_header_id%TYPE;
+        l_line_count      NUMBER;
     BEGIN
-        not_built_yet('PARSE_EXTRACTION', 'Phase 2');
-        RETURN NULL;
+        l_user := current_user_name;
+
+        BEGIN
+            SELECT e.document_id,
+                   e.status,
+                   CASE WHEN e.extracted_json IS NULL THEN 0 ELSE 1 END
+            INTO   l_document_id,
+                   l_status,
+                   l_has_json
+            FROM   dla_extractions e
+            WHERE  e.extraction_id = p_extraction_id;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(
+                    -20040,
+                    'DLA_PKG.PARSE_EXTRACTION: there is no extraction ' || p_extraction_id || '.'
+                );
+        END;
+
+        IF l_status <> 'SUCCESS' OR l_has_json = 0 THEN
+            RAISE_APPLICATION_ERROR(
+                -20040,
+                'DLA_PKG.PARSE_EXTRACTION: extraction ' || p_extraction_id
+                || ' has status ' || l_status || ' and no JSON to parse.'
+            );
+        END IF;
+
+        /* Replace any earlier staging rows for this extraction.
+           Lines and flags go with the header (ON DELETE CASCADE). */
+        DELETE FROM dla_stg_headers h
+        WHERE  h.extraction_id = p_extraction_id;
+
+        /* 1. Header */
+        SELECT jt.vendor_name,
+               jt.invoice_number,
+               jt.invoice_date_txt,
+               jt.due_date_txt,
+               jt.subtotal_txt,
+               jt.tax_txt,
+               jt.total_txt,
+               TO_DATE(jt.invoice_date_txt DEFAULT NULL ON CONVERSION ERROR, 'YYYY-MM-DD'),
+               TO_DATE(jt.due_date_txt     DEFAULT NULL ON CONVERSION ERROR, 'YYYY-MM-DD'),
+               TO_NUMBER(jt.subtotal_txt   DEFAULT NULL ON CONVERSION ERROR),
+               TO_NUMBER(jt.tax_txt        DEFAULT NULL ON CONVERSION ERROR),
+               TO_NUMBER(jt.total_txt      DEFAULT NULL ON CONVERSION ERROR)
+        INTO   l_vendor_name,
+               l_invoice_number,
+               l_inv_date_txt,
+               l_due_date_txt,
+               l_subtotal_txt,
+               l_tax_txt,
+               l_total_txt,
+               l_invoice_date,
+               l_due_date,
+               l_subtotal,
+               l_tax,
+               l_total
+        FROM   dla_extractions e,
+               JSON_TABLE(
+                   e.extracted_json, '$'
+                   COLUMNS (
+                       vendor_name       VARCHAR2(200) PATH '$.vendor_name',
+                       invoice_number    VARCHAR2(100) PATH '$.invoice_number',
+                       invoice_date_txt  VARCHAR2(100) PATH '$.invoice_date',
+                       due_date_txt      VARCHAR2(100) PATH '$.due_date',
+                       subtotal_txt      VARCHAR2(100) PATH '$.subtotal',
+                       tax_txt           VARCHAR2(100) PATH '$.tax',
+                       total_txt         VARCHAR2(100) PATH '$.total'
+                   )
+               ) jt
+        WHERE  e.extraction_id = p_extraction_id;
+
+        /* 2. Vendor match */
+        BEGIN
+            SELECT v.vendor_id
+            INTO   l_vendor_id
+            FROM   dla_vendors v
+            WHERE  UPPER(TRIM(v.vendor_name)) = UPPER(TRIM(l_vendor_name))
+            AND    v.active_yn = 'Y';
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                l_vendor_id := NULL;
+        END;
+
+        INSERT INTO dla_stg_headers (
+            document_id,
+            extraction_id,
+            vendor_name,
+            vendor_id,
+            invoice_number,
+            invoice_date,
+            due_date,
+            subtotal,
+            tax,
+            total,
+            created_by
+        ) VALUES (
+            l_document_id,
+            p_extraction_id,
+            l_vendor_name,
+            l_vendor_id,
+            l_invoice_number,
+            l_invoice_date,
+            l_due_date,
+            l_subtotal,
+            l_tax,
+            l_total,
+            l_user
+        )
+        RETURNING stg_header_id INTO l_stg_header_id;
+
+        /* Flags for values the model returned that would not convert */
+        IF l_inv_date_txt IS NOT NULL AND l_invoice_date IS NULL THEN
+            add_flag(l_stg_header_id, 'INVOICE_DATE', 'WARNING',
+                     'The model returned "' || l_inv_date_txt || '", which is not a date in YYYY-MM-DD form.');
+        END IF;
+        IF l_due_date_txt IS NOT NULL AND l_due_date IS NULL THEN
+            add_flag(l_stg_header_id, 'DUE_DATE', 'WARNING',
+                     'The model returned "' || l_due_date_txt || '", which is not a date in YYYY-MM-DD form.');
+        END IF;
+        IF l_subtotal_txt IS NOT NULL AND l_subtotal IS NULL THEN
+            add_flag(l_stg_header_id, 'SUBTOTAL', 'WARNING',
+                     'The model returned "' || l_subtotal_txt || '", which is not a number.');
+        END IF;
+        IF l_tax_txt IS NOT NULL AND l_tax IS NULL THEN
+            add_flag(l_stg_header_id, 'TAX', 'WARNING',
+                     'The model returned "' || l_tax_txt || '", which is not a number.');
+        END IF;
+        IF l_total_txt IS NOT NULL AND l_total IS NULL THEN
+            add_flag(l_stg_header_id, 'TOTAL', 'WARNING',
+                     'The model returned "' || l_total_txt || '", which is not a number.');
+        END IF;
+
+        /* 3. Lines */
+        INSERT INTO dla_stg_lines (
+            stg_header_id,
+            line_number,
+            description,
+            quantity,
+            unit_price,
+            amount
+        )
+        SELECT l_stg_header_id,
+               NVL(jt.line_number, jt.seq),
+               jt.description,
+               jt.quantity,
+               jt.unit_price,
+               jt.amount
+        FROM   dla_extractions e,
+               JSON_TABLE(
+                   e.extracted_json, '$.line_items[*]'
+                   COLUMNS (
+                       seq          FOR ORDINALITY,
+                       line_number  NUMBER         PATH '$.line_number',
+                       description  VARCHAR2(1000) PATH '$.description',
+                       quantity     NUMBER         PATH '$.quantity',
+                       unit_price   NUMBER         PATH '$.unit_price',
+                       amount       NUMBER         PATH '$.amount'
+                   )
+               ) jt
+        WHERE  e.extraction_id = p_extraction_id;
+
+        l_line_count := SQL%ROWCOUNT;
+
+        log_audit(
+            p_action      => 'STAGED',
+            p_details     => 'Extraction ' || p_extraction_id || ' staged as header '
+                             || l_stg_header_id || ' with ' || l_line_count || ' line(s).',
+            p_document_id => l_document_id
+        );
+
+        RETURN l_stg_header_id;
+    EXCEPTION
+        WHEN OTHERS THEN
+            log_audit(
+                p_action      => 'STAGING_ERROR',
+                p_details     => 'PARSE_EXTRACTION failed for extraction ' || p_extraction_id || ': ' || SQLERRM,
+                p_document_id => l_document_id
+            );
+            RAISE;
     END parse_extraction;
 
     /* --------------------------------------------------------
@@ -293,15 +531,11 @@ END dla_pkg;
 SHOW ERRORS PACKAGE BODY dla_pkg
 
 /* ------------------------------------------------------------
-   Test 1  : Call the two working routines
+   Test 1  : Call a working routine
    Purpose : Proves the package runs. Expect the line
              "ACTIVE_MODEL = OLLAMA" in the Script Output.
    ------------------------------------------------------------ */
 BEGIN
-    dla_pkg.log_audit(
-        p_action  => 'PHASE1_INSTALL',
-        p_details => 'DLA_PKG installed and LOG_AUDIT tested.'
-    );
     DBMS_OUTPUT.PUT_LINE('ACTIVE_MODEL = ' || dla_pkg.get_setting('ACTIVE_MODEL'));
 EXCEPTION
     WHEN OTHERS THEN
@@ -323,15 +557,3 @@ FROM   all_objects
 WHERE  owner = 'WKSP_WKSPPRDWORKSPACE'
 AND    object_name = 'DLA_PKG'
 ORDER  BY object_type;
-
-/* ------------------------------------------------------------
-   Check 2 : Audit log
-   Purpose : Expect 1 row with ACTION = PHASE1_INSTALL.
-   ------------------------------------------------------------ */
-SELECT audit_id,
-       action,
-       details,
-       performed_by,
-       performed_on
-FROM   dla_audit_log
-ORDER  BY audit_id;
