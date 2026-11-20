@@ -137,6 +137,41 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
     END current_user_name;
 
     /* --------------------------------------------------------
+       Private : TEXT_TO_DATE
+       Purpose : Turn date text from the model into a DATE.
+                 The model is asked for YYYY-MM-DD but sometimes
+                 copies the date the way the invoice prints it,
+                 so two forms are accepted:
+                   2026-12-12   (YYYY-MM-DD)
+                   12/12/2026   (MM/DD/YYYY)
+                 Anything else, or a date that does not exist
+                 (month 13, day 32), returns NULL. That is not a
+                 silent failure: PARSE_EXTRACTION raises a flag
+                 whenever text was returned but no date came out.
+       -------------------------------------------------------- */
+    FUNCTION text_to_date (
+        p_text  IN VARCHAR2
+    ) RETURN DATE IS
+        l_text  VARCHAR2(100);
+    BEGIN
+        l_text := TRIM(p_text);
+
+        IF l_text IS NULL THEN
+            RETURN NULL;
+        ELSIF REGEXP_LIKE(l_text, '^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$') THEN
+            RETURN TO_DATE(l_text, 'YYYY-MM-DD');
+        ELSIF REGEXP_LIKE(l_text, '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$') THEN
+            RETURN TO_DATE(l_text, 'MM/DD/YYYY');
+        ELSE
+            RETURN NULL;
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            /* The text had the right shape but is not a real date. */
+            RETURN NULL;
+    END text_to_date;
+
+    /* --------------------------------------------------------
        Private : NOT_BUILT_YET
        Purpose : Shared behavior for the placeholders. Logs the
                  call, then raises ORA-20099 with a clear message.
@@ -426,9 +461,11 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
        Purpose : Turn the model's JSON into staging rows.
                  1. Header fields come out with JSON_TABLE. Each
                     date and amount is read twice: as text, and
-                    converted. If the text is there but will not
-                    convert, the field is left empty and a
-                    WARNING flag says what the model returned.
+                    converted. Dates are accepted as YYYY-MM-DD
+                    or MM/DD/YYYY (see TEXT_TO_DATE). If the text
+                    is there but will not convert, the field is
+                    left empty and a WARNING flag says what the
+                    model returned.
                  2. The vendor name is matched to DLA_VENDORS
                     (exact name, ignoring case). No match leaves
                     VENDOR_ID empty; the validation step reports
@@ -501,8 +538,6 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
                jt.subtotal_txt,
                jt.tax_txt,
                jt.total_txt,
-               TO_DATE(jt.invoice_date_txt DEFAULT NULL ON CONVERSION ERROR, 'YYYY-MM-DD'),
-               TO_DATE(jt.due_date_txt     DEFAULT NULL ON CONVERSION ERROR, 'YYYY-MM-DD'),
                TO_NUMBER(jt.subtotal_txt   DEFAULT NULL ON CONVERSION ERROR),
                TO_NUMBER(jt.tax_txt        DEFAULT NULL ON CONVERSION ERROR),
                TO_NUMBER(jt.total_txt      DEFAULT NULL ON CONVERSION ERROR)
@@ -513,8 +548,6 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
                l_subtotal_txt,
                l_tax_txt,
                l_total_txt,
-               l_invoice_date,
-               l_due_date,
                l_subtotal,
                l_tax,
                l_total
@@ -532,6 +565,12 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
                    )
                ) jt
         WHERE  e.extraction_id = p_extraction_id;
+
+        /* Dates are converted here, not in the query above: a
+           function private to this package body cannot be called
+           from SQL. */
+        l_invoice_date := text_to_date(l_inv_date_txt);
+        l_due_date     := text_to_date(l_due_date_txt);
 
         /* 2. Vendor match */
         BEGIN
@@ -575,11 +614,11 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
         /* Flags for values the model returned that would not convert */
         IF l_inv_date_txt IS NOT NULL AND l_invoice_date IS NULL THEN
             add_flag(l_stg_header_id, 'INVOICE_DATE', 'WARNING',
-                     'The model returned "' || l_inv_date_txt || '", which is not a date in YYYY-MM-DD form.');
+                     'The model returned "' || l_inv_date_txt || '", which could not be read as a date (YYYY-MM-DD or MM/DD/YYYY).');
         END IF;
         IF l_due_date_txt IS NOT NULL AND l_due_date IS NULL THEN
             add_flag(l_stg_header_id, 'DUE_DATE', 'WARNING',
-                     'The model returned "' || l_due_date_txt || '", which is not a date in YYYY-MM-DD form.');
+                     'The model returned "' || l_due_date_txt || '", which could not be read as a date (YYYY-MM-DD or MM/DD/YYYY).');
         END IF;
         IF l_subtotal_txt IS NOT NULL AND l_subtotal IS NULL THEN
             add_flag(l_stg_header_id, 'SUBTOTAL', 'WARNING',
@@ -657,6 +696,10 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
                  7. Subtotal + tax = total.
                  8. The due date is not before the invoice date
                     (WARNING).
+                 9. The invoice date is not in the future. A model
+                    that finds no invoice date sometimes fills in
+                    the due date instead; a date after today is
+                    how that shows up.
                  Differences up to the TOTAL_TOLERANCE setting are
                  allowed, for rounding.
                  Raises ORA-20060 if the staged invoice does not
@@ -817,6 +860,16 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
                      'The due date is before the invoice date.', 'CHECK');
         END IF;
 
+        /* 9. Invoice date not in the future */
+        IF l_h.invoice_date IS NOT NULL
+           AND TRUNC(l_h.invoice_date) > TRUNC(SYSDATE)
+        THEN
+            add_flag(p_stg_header_id, 'INVOICE_DATE', 'ERROR',
+                     'The invoice date ' || TO_CHAR(l_h.invoice_date, 'MM/DD/YYYY')
+                     || ' is in the future. Check it against the invoice: it may be the due date, or the invoice may have no date.',
+                     'CHECK');
+        END IF;
+
         SELECT COUNT(*)
         INTO   l_count
         FROM   dla_stg_flags f
@@ -927,6 +980,9 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
                  tables. Raises ORA-20070 if it does not exist,
                  is not APPROVED, was already loaded, or is
                  missing a field the final table requires.
+                 LOADED_BY is whoever approved the invoice:
+                 AGENT when the agent approved it, otherwise the
+                 person who approved it on the review page.
        -------------------------------------------------------- */
     FUNCTION load_invoice (
         p_stg_header_id  IN NUMBER
@@ -1005,7 +1061,7 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
             l_h.total,
             l_h.document_id,
             p_stg_header_id,
-            l_user
+            NVL(l_h.reviewed_by, l_user)
         )
         RETURNING invoice_id INTO l_invoice_id;
 

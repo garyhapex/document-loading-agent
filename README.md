@@ -50,6 +50,7 @@ Uses only features available on Oracle Database 19c with APEX 24.2: JSON_TABLE, 
 | `db/utilities/` | Inventory and start-over scripts |
 | `apex/` | APEX application export |
 | `samples/invoices/` | Fictional sample invoices, PDF and PNG |
+| `samples/invoices-gas/` | Fictional natural gas invoices (PDF): 2 clean and 4 with a deliberate problem |
 | `docs/` | Design notes and demo script |
 
 ## Deployment sequence
