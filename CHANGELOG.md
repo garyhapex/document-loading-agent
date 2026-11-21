@@ -2,6 +2,15 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/21/2026 (evening, 5:40 PM) - Fresh data for the video; instruction format switched to Stick-IT's
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Reset (DLA_15) run by Gary. | DEV | 6 documents, 8 reads, 2 invoices, 51 audit rows removed; vendors 10, settings 12 kept. |
+| 2 | The six new sample PDFs copied into `C:\DLA\inbox` with Upload Invoice on screen. | DEV + relay | 2 Loaded, 4 Needs review, 6 to 12 s each, local model. Page filled by itself. |
+| 3 | Gary pointed Claude to his Stick-IT project's instruction format (`SESSION_289_OPENING.md`, "INSTRUCTION FORMAT — REPLACED AT S287"). `claude/DLA_Response_Format_Standard.md` rewritten: new Rule 0 is that format; old markers and four-column tables retired. | project docs | Saved. |
+| 4 | Page 5 showed "ORA-01403: no data found" after the reset: P5_INVOICE_ID still held an invoice the reset deleted. New Before Header process "Forget an invoice that no longer exists" clears the item when the invoice is gone. | DEV, Page Designer | Checked: page 5 shows the list (2 loaded invoices). |
+
 ## 11/21/2026 (evening, 5:20 PM) - Vendors page: Status drop-down, who columns, Oconee Ridge rename
 
 | Step | What | Where | Result |

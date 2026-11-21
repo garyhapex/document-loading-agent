@@ -33,13 +33,13 @@ prompt APPLICATION 300 - Document Loading Agent
 -- Application Export:
 --   Application:     300
 --   Name:            Document Loading Agent
---   Date and Time:   23:21 Saturday November 21, 2026
+--   Date and Time:   23:38 Saturday November 21, 2026
 --   Exported By:     GHALL
 --   Flashback:       0
 --   Export Type:     Application Export
 --     Pages:                      8
 --       Items:                   20
---       Processes:               18
+--       Processes:               19
 --       Regions:                 31
 --       Buttons:                  9
 --     Shared Components:
@@ -105,12 +105,12 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'Document Loading Agent'
 ,p_created_on=>wwv_flow_imp.dz('20261120012444Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121231928Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121233703Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 ,p_file_prefix=>nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>2461366200330
-,p_version_scn=>'51226461424221'
+,p_version_scn=>'51226462810816'
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -4081,7 +4081,7 @@ wwv_flow_imp_page.create_page(
 ,p_protection_level=>'C'
 ,p_page_component_map=>'03'
 ,p_created_on=>wwv_flow_imp.dz('20261121195528Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121195906Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121233703Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 );
@@ -4717,6 +4717,43 @@ wwv_flow_imp_page.create_page_item(
   'value_protected', 'Y')).to_clob
 ,p_created_on=>wwv_flow_imp.dz('20261121195703Z')
 ,p_updated_on=>wwv_flow_imp.dz('20261121195906Z')
+,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(63545623437822243)
+,p_process_sequence=>5
+,p_process_point=>'BEFORE_HEADER'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Forget an invoice that no longer exists'
+,p_static_id=>'forget-an-invoice-that-no-longer-exists'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/* ------------------------------------------------------------',
+'   Process : Forget an invoice that no longer exists (11/21/2026)',
+'   Purpose : P5_INVOICE_ID is kept in the session. After a demo',
+'             reset the invoice it points at is gone, and the page',
+'             showed ORA-01403 instead of the list. If the invoice',
+'             is not in DLA_INVOICES, clear the item so the list',
+'             shows. Read-only apart from the page item.',
+'   ------------------------------------------------------------ */',
+'DECLARE',
+'    l_count NUMBER;',
+'BEGIN',
+'    IF :P5_INVOICE_ID IS NOT NULL THEN',
+'        SELECT COUNT(*)',
+'        INTO   l_count',
+'        FROM   dla_invoices i',
+'        WHERE  i.invoice_id = TO_NUMBER(:P5_INVOICE_ID);',
+'',
+'        IF l_count = 0 THEN',
+'            :P5_INVOICE_ID := NULL;',
+'        END IF;',
+'    END IF;',
+'END;'))
+,p_process_clob_language=>'PLSQL'
+,p_internal_uid=>63545623437822243
+,p_created_on=>wwv_flow_imp.dz('20261121233703Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121233703Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
