@@ -33,13 +33,13 @@ prompt APPLICATION 300 - Document Loading Agent
 -- Application Export:
 --   Application:     300
 --   Name:            Document Loading Agent
---   Date and Time:   20:27 Saturday November 21, 2026
+--   Date and Time:   21:03 Saturday November 21, 2026
 --   Exported By:     GHALL
 --   Flashback:       0
 --   Export Type:     Application Export
 --     Pages:                      7
 --       Items:                   20
---       Processes:               13
+--       Processes:               16
 --       Regions:                 29
 --       Buttons:                 10
 --     Shared Components:
@@ -105,12 +105,12 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'Document Loading Agent'
 ,p_created_on=>wwv_flow_imp.dz('20261120012444Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121202502Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121210204Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 ,p_file_prefix=>nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>2461366200330
-,p_version_scn=>'51225138774629'
+,p_version_scn=>'51225141532238'
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -1092,7 +1092,7 @@ wwv_flow_imp_page.create_page(
 ,p_protection_level=>'D'
 ,p_page_component_map=>'14'
 ,p_created_on=>wwv_flow_imp.dz('20261120012447Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121202057Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121210204Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 );
@@ -1118,12 +1118,122 @@ wwv_flow_imp_page.create_page_plug(
 '.dla-b-error    { background: #C62828; }',
 '.dla-b-reading  { background: #1565C0; }',
 '.dla-b-rejected { background: #424242; }',
-'</style>'))
+'/* Live updates: notices (top right), row flash, Live marker. */',
+'#dla-toasts { position: fixed; top: 120px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }',
+'.dla-toast { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 6px; color: #fff; font-size: 13px; font-weight: 600; box-shadow: 0 6px 18px rgba(0,0,0,.18); animation: dla-in .3s ease-out; transition: opacity .6s; }',
+'.dla-toast-out { opacity: 0; }',
+'@keyframes dla-in { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }',
+'tr.dla-flash td { animation: dla-flash 1.8s ease-out; }',
+'@keyframes dla-flash { 0% { background: #FFE0B2; } 100% { background: transparent; } }',
+'.dla-live { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; font-size: 12px; font-weight: 600; color: #2E7D32; vertical-align: middle; }',
+'.dla-live i { width: 8px; height: 8px; border-radius: 50%; background: #2E7D32; animation: dla-pulse 1.6s ease-in-out infinite; }',
+'@keyframes dla-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }',
+'</style>',
+'<script>',
+'/* dlaLive (11/21/2026): live updates for any page.',
+'   dlaLive.start({ regions: [static ids to refresh], marker: static id',
+'   that gets the Live dot, filter: optional function(row), readToast:',
+'   optional, x01: optional function }). Every 3 seconds (15 when the tab',
+'   is hidden) it calls the page''s LIVE_STATUS Ajax callback, compares',
+'   the answer with the last one, and only when something changed:',
+'   refreshes the regions, flashes the changed rows (found by data-doc),',
+'   and shows a short notice in the badge colours. */',
+'window.dlaLive = (function () {',
+'    var LABEL = {',
+'        LOADED    : ["dla-b-loaded",   "fa-check-circle",         "loaded by the agent"],',
+'        APPROVED  : ["dla-b-loaded",   "fa-check-circle",         "approved"],',
+'        IN_REVIEW : ["dla-b-review",   "fa-exclamation-triangle", "needs review"],',
+'        ERROR     : ["dla-b-error",    "fa-times",                "read failed"],',
+'        REJECTED  : ["dla-b-rejected", "fa-ban",                  "rejected"]',
+'    };',
+'    function box() {',
+'        var b = document.getElementById("dla-toasts");',
+'        if (!b) { b = document.createElement("div"); b.id = "dla-toasts"; document.body.appendChild(b); }',
+'        return b;',
+'    }',
+'    function toast(cls, icon, text) {',
+'        var t = document.createElement("div");',
+'        t.className = "dla-toast " + cls;',
+'        t.innerHTML = ''<span class="fa '' + icon + ''" aria-hidden="true"></span>'';',
+'        t.appendChild(document.createTextNode(text));',
+'        var b = box();',
+'        b.insertBefore(t, b.firstChild);',
+'        while (b.children.length > 4) { b.removeChild(b.lastChild); }',
+'        setTimeout(function () { t.classList.add("dla-toast-out"); setTimeout(function () { t.remove(); }, 700); }, 4500);',
+'    }',
+'    function marker(id) {',
+'        var title = document.querySelector("#" + id + " .t-Region-title");',
+'        if (title) { if (!title.querySelector(".dla-live")) {',
+'            var m = document.createElement("span"); m.className = "dla-live"; m.innerHTML = "<i></i>Live"; title.appendChild(m);',
+'        } }',
+'    }',
+'    function nameOf(f) { return String(f || "").replace(/\.pdf$/i, ""); }',
+'    function start(opt) {',
+'        var prev = null;',
+'        /* A region can be named by its static id or by its title. */',
+'        function rid(x) {',
+'            if (document.getElementById(x)) { return x; }',
+'            var hit = Array.prototype.filter.call(document.querySelectorAll(".t-Region"), function (e) {',
+'                var t = e.querySelector(".t-Region-title");',
+'                return t ? t.textContent.trim() === x : false;',
+'            })[0];',
+'            return hit ? hit.id : null;',
+'        }',
+'        opt.regions = (opt.regions || []).map(rid).filter(Boolean);',
+'        var markers = (opt.marker ? [].concat(opt.marker) : []).map(rid).filter(Boolean);',
+'        markers.forEach(marker);',
+'        function flash(changed) {',
+'            changed.forEach(function (d) {',
+'                var a = document.querySelector(''[data-doc="'' + d.id + ''"]'');',
+'                var tr = a ? a.closest("tr") : null;',
+'                if (tr) { tr.classList.remove("dla-flash"); void tr.offsetWidth; tr.classList.add("dla-flash"); }',
+'            });',
+'        }',
+'        function refresh(changed) {',
+'            (opt.regions || []).forEach(function (id) {',
+'                var el = document.getElementById(id);',
+'                if (!el) { return; }',
+'                apex.jQuery(el).one("apexafterrefresh", function () { flash(changed); markers.forEach(marker); });',
+'                apex.region(id).refresh();',
+'            });',
+'        }',
+'        function tick() {',
+'            apex.server.process("LIVE_STATUS", { x01: opt.x01 ? opt.x01() : null }, { dataType: "json" })',
+'                .done(function (rows) {',
+'                    var map = {};',
+'                    rows = rows || [];',
+'                    rows.forEach(function (d) { map[d.id] = d; });',
+'                    if (prev) {',
+'                        var changed = [];',
+'                        rows.forEach(function (d) {',
+'                            var p = prev[d.id];',
+'                            if (opt.filter) { if (!opt.filter(d)) { return; } }',
+'                            if (!p) {',
+'                                changed.push(d);',
+'                                toast("dla-b-reading", "fa-inbox", nameOf(d.f) + " received");',
+'                            } else if (p.s !== d.s || p.e !== d.e) {',
+'                                changed.push(d);',
+'                                if (p.s !== d.s) { if (LABEL[d.s]) { toast(LABEL[d.s][0], LABEL[d.s][1], nameOf(d.f) + " " + LABEL[d.s][2]); } }',
+'                                else if (opt.readToast) { if (!/PENDING|RUNNING/.test(d.e || "")) { toast("dla-b-loaded", "fa-check-circle", "Both models have read " + nameOf(d.f)); } }',
+'                            }',
+'                        });',
+'                        var gone = Object.keys(prev).some(function (k) { return !map[k]; });',
+'                        if (changed.length || gone) { refresh(changed); }',
+'                    }',
+'                    prev = map;',
+'                })',
+'                .always(function () { setTimeout(tick, document.hidden ? 15000 : (opt.interval || 3000)); });',
+'        }',
+'        tick();',
+'    }',
+'    return { start: start, toast: toast };',
+'})();',
+'</script>'))
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'expand_shortcuts', 'N',
   'output_as', 'HTML')).to_clob
 ,p_created_on=>wwv_flow_imp.dz('20261121202057Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121202057Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121210204Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
@@ -1137,6 +1247,14 @@ wwv_flow_imp_page.create_page(
 ,p_alias=>'HOME'
 ,p_step_title=>'Document Loading Agent'
 ,p_autocomplete_on_off=>'OFF'
+,p_javascript_code_onload=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/* Live updates (11/21/2026): the cards and Latest documents refresh',
+'   by themselves when any document changes; changed rows flash and a',
+'   short notice appears. dlaLive is on page 0. */',
+'dlaLive.start({',
+'    regions : ["What the agent has done", "Latest documents"],',
+'    marker  : "Latest documents"',
+'});'))
 ,p_inline_css=>wwv_flow_string.join(wwv_flow_t_varchar2(
 '.dla-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }',
 '.dla-cards-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }',
@@ -1153,36 +1271,81 @@ wwv_flow_imp_page.create_page(
 ,p_protection_level=>'C'
 ,p_page_component_map=>'13'
 ,p_created_on=>wwv_flow_imp.dz('20261120012448Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121202502Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121210040Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 );
 wwv_flow_imp_page.create_page_plug(
- p_id=>wwv_flow_imp.id(63234247897513522)
-,p_plug_name=>'Document Loading Agent'
-,p_static_id=>'document-loading-agent'
-,p_icon_css_classes=>'fa-file-text-o'
+ p_id=>wwv_flow_imp.id(63522567227706802)
+,p_plug_name=>'What the agent has done'
+,p_static_id=>'dla-home-cards'
+,p_icon_css_classes=>'fa-check-square-o'
 ,p_region_template_options=>'#DEFAULT#'
-,p_plug_template=>2675494171183407654
-,p_plug_display_sequence=>10
-,p_plug_display_point=>'REGION_POSITION_01'
+,p_plug_template=>4073835273271169698
+,p_plug_display_sequence=>20
 ,p_plug_item_display_point=>'ABOVE'
 ,p_location=>null
-,p_plug_source=>'<p>The model reads. The database decides. A person approves only what was stopped.</p>'
-,p_plug_query_num_rows=>15
-,p_region_image=>'#APP_FILES#icons/app-icon-512.png'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'expand_shortcuts', 'N',
-  'output_as', 'HTML')).to_clob
-,p_created_on=>wwv_flow_imp.dz('20261120012448Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121193838Z')
+,p_function_body_language=>'PLSQL'
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/* Page 1 Home: the dashboard cards. Each card is a link to the page behind the number. */',
+'DECLARE',
+'    l_html      CLOB;',
+'    l_received  NUMBER; l_agent    NUMBER; l_person  NUMBER;',
+'    l_waiting   NUMBER; l_rejected NUMBER; l_failed  NUMBER;',
+'    l_loc_s     NUMBER; l_loc_n    NUMBER; l_oci_s   NUMBER; l_oci_n NUMBER;',
+'    PROCEDURE card (p_num VARCHAR2, p_label VARCHAR2, p_go VARCHAR2,',
+'                    p_icon VARCHAR2, p_tone VARCHAR2, p_page NUMBER) IS',
+'    BEGIN',
+'        l_html := l_html || ''<a class="dla-card dla-'' || p_tone || ''" href="''',
+'               || APEX_ESCAPE.HTML_ATTRIBUTE(APEX_PAGE.GET_URL(p_page => p_page)) || ''">''',
+'               || ''<span class="dla-card-icon fa '' || p_icon || ''" aria-hidden="true"></span>''',
+'               || ''<span class="dla-card-num">'' || APEX_ESCAPE.HTML(p_num) || ''</span>''',
+'               || ''<span class="dla-card-label">'' || APEX_ESCAPE.HTML(p_label) || ''</span>''',
+'               || ''<span class="dla-card-go">'' || APEX_ESCAPE.HTML(p_go) || '' &rarr;</span></a>'';',
+'    END card;',
+'BEGIN',
+'    SELECT COUNT(*) INTO l_received FROM dla_documents d;',
+'    SELECT COUNT(*) INTO l_agent FROM dla_invoices i, dla_stg_headers h',
+'    WHERE  h.stg_header_id = i.stg_header_id AND h.reviewed_by = ''AGENT'';',
+'    SELECT COUNT(*) INTO l_person FROM dla_invoices i, dla_stg_headers h',
+'    WHERE  h.stg_header_id = i.stg_header_id AND NVL(h.reviewed_by, ''AGENT'') <> ''AGENT'';',
+'    SELECT COUNT(*) INTO l_waiting  FROM dla_stg_headers h WHERE h.review_status = ''PENDING'';',
+'    SELECT COUNT(*) INTO l_rejected FROM dla_stg_headers h WHERE h.review_status = ''REJECTED'';',
+'    SELECT COUNT(*) INTO l_failed   FROM dla_extractions e WHERE e.status = ''ERROR'';',
+'    SELECT ROUND(AVG(e.elapsed_ms) / 1000, 1), COUNT(*) INTO l_loc_s, l_loc_n',
+'    FROM   dla_extractions e WHERE e.status = ''SUCCESS'' AND e.model_code = ''OLLAMA'';',
+'    SELECT ROUND(AVG(e.elapsed_ms) / 1000, 1), COUNT(*) INTO l_oci_s, l_oci_n',
+'    FROM   dla_extractions e WHERE e.status = ''SUCCESS'' AND e.model_code = ''OCI_GENAI'';',
+'',
+'    l_html := ''<div class="dla-cards">'';',
+'    card(l_received, ''Invoices received'',              ''Upload Invoice'',  ''fa-inbox'',              ''neutral'', 2);',
+'    card(l_agent,    ''Loaded by the agent, no person'', ''Loaded Invoices'', ''fa-check-circle'',       ''good'',    5);',
+'    card(l_person,   ''Loaded after a person reviewed'', ''Loaded Invoices'', ''fa-user'',               ''good'',    5);',
+'    card(l_waiting,  ''Waiting for a person'',           ''Review Invoices'', ''fa-clock-o'',            ''wait'',    3);',
+'    card(l_rejected, ''Rejected by a person'',           ''Review Invoices'', ''fa-times-circle'',       ''neutral'', 3);',
+'    card(l_failed,   ''Reads that failed'',              ''Upload Invoice'',  ''fa-exclamation-triangle'', ''bad'',   2);',
+'    l_html := l_html || ''</div><div class="dla-cards dla-cards-2">'';',
+'    card(NVL(TO_CHAR(l_loc_s), ''-'') || '' s'', ''Local model, average of '' || l_loc_n || '' reads'',',
+'         ''Compare Models'', ''fa-desktop'', ''neutral'', 4);',
+'    card(NVL(TO_CHAR(l_oci_s), ''-'') || '' s'', ''OCI Generative AI, average of '' || l_oci_n || '' reads'',',
+'         ''Compare Models'', ''fa-cloud'', ''neutral'', 4);',
+'    l_html := l_html || ''</div>'';',
+'    RETURN l_html;',
+'EXCEPTION',
+'    WHEN OTHERS THEN',
+'        RETURN ''<p>The dashboard could not be drawn: '' || APEX_ESCAPE.HTML(SQLERRM) || ''</p>'';',
+'END;'))
+,p_lazy_loading=>false
+,p_plug_source_type=>'NATIVE_DYNAMIC_CONTENT'
+,p_created_on=>wwv_flow_imp.dz('20261121193837Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205851Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
 wwv_flow_imp_page.create_report_region(
  p_id=>wwv_flow_imp.id(63523231959706809)
 ,p_name=>'Latest documents'
-,p_static_id=>'latest-documents'
+,p_static_id=>'dla-home-latest'
 ,p_template=>4073835273271169698
 ,p_display_sequence=>40
 ,p_icon_css_classes=>'fa-list'
@@ -1256,7 +1419,7 @@ wwv_flow_imp_page.create_report_region(
 ,p_sort_null=>'L'
 ,p_plug_query_strip_html=>'N'
 ,p_created_on=>wwv_flow_imp.dz('20261121193838Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121202219Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205851Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
@@ -1307,13 +1470,13 @@ wwv_flow_imp_page.create_report_columns(
 ,p_column_alias=>'OUTCOME'
 ,p_column_display_sequence=>70
 ,p_column_heading=>'What happened'
-,p_column_html_expression=>'<a class="#OUTCOME_CLASS#" href="#OPEN_LINK#"><span class="fa #OUTCOME_ICON#" aria-hidden="true"></span>#OUTCOME#</a>'
+,p_column_html_expression=>'<a class="#OUTCOME_CLASS#" data-doc="#DOCUMENT_ID#" href="#OPEN_LINK#"><span class="fa #OUTCOME_ICON#" aria-hidden="true"></span>#OUTCOME#</a>'
 ,p_heading_alignment=>'LEFT'
 ,p_disable_sort_column=>'N'
 ,p_display_as=>'WITHOUT_MODIFICATION'
 ,p_derived_column=>'N'
 ,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121202219Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205726Z')
 ,p_updated_by=>'GHALL'
 );
 wwv_flow_imp_page.create_report_columns(
@@ -1391,69 +1554,70 @@ wwv_flow_imp_page.create_report_columns(
 ,p_updated_by=>'GHALL'
 );
 wwv_flow_imp_page.create_page_plug(
- p_id=>wwv_flow_imp.id(63522567227706802)
-,p_plug_name=>'What the agent has done'
-,p_static_id=>'what-the-agent-has-done'
-,p_icon_css_classes=>'fa-check-square-o'
+ p_id=>wwv_flow_imp.id(63234247897513522)
+,p_plug_name=>'Document Loading Agent'
+,p_static_id=>'document-loading-agent'
+,p_icon_css_classes=>'fa-file-text-o'
 ,p_region_template_options=>'#DEFAULT#'
-,p_plug_template=>4073835273271169698
-,p_plug_display_sequence=>20
+,p_plug_template=>2675494171183407654
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'REGION_POSITION_01'
 ,p_plug_item_display_point=>'ABOVE'
 ,p_location=>null
-,p_function_body_language=>'PLSQL'
-,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'/* Page 1 Home: the dashboard cards. Each card is a link to the page behind the number. */',
+,p_plug_source=>'<p>The model reads. The database decides. A person approves only what was stopped.</p>'
+,p_plug_query_num_rows=>15
+,p_region_image=>'#APP_FILES#icons/app-icon-512.png'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'HTML')).to_clob
+,p_created_on=>wwv_flow_imp.dz('20261120012448Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121193838Z')
+,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(63545115281822238)
+,p_process_sequence=>10
+,p_process_point=>'ON_DEMAND'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'LIVE_STATUS'
+,p_static_id=>'live-status'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/* ------------------------------------------------------------',
+'   Process : LIVE_STATUS (Ajax callback, 11/21/2026)',
+'   Purpose : Called by the page every few seconds. Returns one',
+'             small JSON row per recent document: id, file name,',
+'             document status, and a fingerprint of its reads',
+'             (extraction id + status). The page compares this',
+'             with the last answer and refreshes only when',
+'             something changed. Read-only.',
+'   ------------------------------------------------------------ */',
 'DECLARE',
-'    l_html      CLOB;',
-'    l_received  NUMBER; l_agent    NUMBER; l_person  NUMBER;',
-'    l_waiting   NUMBER; l_rejected NUMBER; l_failed  NUMBER;',
-'    l_loc_s     NUMBER; l_loc_n    NUMBER; l_oci_s   NUMBER; l_oci_n NUMBER;',
-'    PROCEDURE card (p_num VARCHAR2, p_label VARCHAR2, p_go VARCHAR2,',
-'                    p_icon VARCHAR2, p_tone VARCHAR2, p_page NUMBER) IS',
-'    BEGIN',
-'        l_html := l_html || ''<a class="dla-card dla-'' || p_tone || ''" href="''',
-'               || APEX_ESCAPE.HTML_ATTRIBUTE(APEX_PAGE.GET_URL(p_page => p_page)) || ''">''',
-'               || ''<span class="dla-card-icon fa '' || p_icon || ''" aria-hidden="true"></span>''',
-'               || ''<span class="dla-card-num">'' || APEX_ESCAPE.HTML(p_num) || ''</span>''',
-'               || ''<span class="dla-card-label">'' || APEX_ESCAPE.HTML(p_label) || ''</span>''',
-'               || ''<span class="dla-card-go">'' || APEX_ESCAPE.HTML(p_go) || '' &rarr;</span></a>'';',
-'    END card;',
+'    l_out CLOB;',
 'BEGIN',
-'    SELECT COUNT(*) INTO l_received FROM dla_documents d;',
-'    SELECT COUNT(*) INTO l_agent FROM dla_invoices i, dla_stg_headers h',
-'    WHERE  h.stg_header_id = i.stg_header_id AND h.reviewed_by = ''AGENT'';',
-'    SELECT COUNT(*) INTO l_person FROM dla_invoices i, dla_stg_headers h',
-'    WHERE  h.stg_header_id = i.stg_header_id AND NVL(h.reviewed_by, ''AGENT'') <> ''AGENT'';',
-'    SELECT COUNT(*) INTO l_waiting  FROM dla_stg_headers h WHERE h.review_status = ''PENDING'';',
-'    SELECT COUNT(*) INTO l_rejected FROM dla_stg_headers h WHERE h.review_status = ''REJECTED'';',
-'    SELECT COUNT(*) INTO l_failed   FROM dla_extractions e WHERE e.status = ''ERROR'';',
-'    SELECT ROUND(AVG(e.elapsed_ms) / 1000, 1), COUNT(*) INTO l_loc_s, l_loc_n',
-'    FROM   dla_extractions e WHERE e.status = ''SUCCESS'' AND e.model_code = ''OLLAMA'';',
-'    SELECT ROUND(AVG(e.elapsed_ms) / 1000, 1), COUNT(*) INTO l_oci_s, l_oci_n',
-'    FROM   dla_extractions e WHERE e.status = ''SUCCESS'' AND e.model_code = ''OCI_GENAI'';',
-'',
-'    l_html := ''<div class="dla-cards">'';',
-'    card(l_received, ''Invoices received'',              ''Upload Invoice'',  ''fa-inbox'',              ''neutral'', 2);',
-'    card(l_agent,    ''Loaded by the agent, no person'', ''Loaded Invoices'', ''fa-check-circle'',       ''good'',    5);',
-'    card(l_person,   ''Loaded after a person reviewed'', ''Loaded Invoices'', ''fa-user'',               ''good'',    5);',
-'    card(l_waiting,  ''Waiting for a person'',           ''Review Invoices'', ''fa-clock-o'',            ''wait'',    3);',
-'    card(l_rejected, ''Rejected by a person'',           ''Review Invoices'', ''fa-times-circle'',       ''neutral'', 3);',
-'    card(l_failed,   ''Reads that failed'',              ''Upload Invoice'',  ''fa-exclamation-triangle'', ''bad'',   2);',
-'    l_html := l_html || ''</div><div class="dla-cards dla-cards-2">'';',
-'    card(NVL(TO_CHAR(l_loc_s), ''-'') || '' s'', ''Local model, average of '' || l_loc_n || '' reads'',',
-'         ''Compare Models'', ''fa-desktop'', ''neutral'', 4);',
-'    card(NVL(TO_CHAR(l_oci_s), ''-'') || '' s'', ''OCI Generative AI, average of '' || l_oci_n || '' reads'',',
-'         ''Compare Models'', ''fa-cloud'', ''neutral'', 4);',
-'    l_html := l_html || ''</div>'';',
-'    RETURN l_html;',
-'EXCEPTION',
-'    WHEN OTHERS THEN',
-'        RETURN ''<p>The dashboard could not be drawn: '' || APEX_ESCAPE.HTML(SQLERRM) || ''</p>'';',
+'    SELECT JSON_ARRAYAGG(',
+'               JSON_OBJECT(''id'' VALUE x.document_id,',
+'                           ''f''  VALUE x.file_name,',
+'                           ''s''  VALUE x.status,',
+'                           ''e''  VALUE x.reads)',
+'               ORDER BY x.document_id DESC RETURNING CLOB)',
+'    INTO   l_out',
+'    FROM  (SELECT d.document_id,',
+'                  d.file_name,',
+'                  d.status,',
+'                  (SELECT LISTAGG(e.extraction_id || e.status, '','')',
+'                          WITHIN GROUP (ORDER BY e.extraction_id)',
+'                   FROM   dla_extractions e',
+'                   WHERE  e.document_id = d.document_id) AS reads',
+'           FROM   dla_documents d',
+'           ORDER  BY d.document_id DESC',
+'           FETCH FIRST 50 ROWS ONLY) x;',
+'    apex_util.prn(NVL(l_out, ''[]''), FALSE);',
 'END;'))
-,p_lazy_loading=>false
-,p_plug_source_type=>'NATIVE_DYNAMIC_CONTENT'
-,p_created_on=>wwv_flow_imp.dz('20261121193837Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121200157Z')
+,p_process_clob_language=>'PLSQL'
+,p_internal_uid=>63545115281822238
+,p_created_on=>wwv_flow_imp.dz('20261121205726Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205726Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
@@ -1469,22 +1633,28 @@ wwv_flow_imp_page.create_page(
 ,p_warn_on_unsaved_changes=>'N'
 ,p_autocomplete_on_off=>'OFF'
 ,p_javascript_code_onload=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'/* Keep the Documents report current without anyone clicking.',
-'   Every 30 seconds: if any invoice is still waiting or being',
-'   read (a clock or spinning icon is showing), refresh the',
-'   report. When nothing is in progress, do nothing. */',
+'/* Live updates (11/21/2026). Every 3 seconds the page asks the',
+'   database (Ajax callback LIVE_STATUS) whether any document',
+'   changed. Only when something changed is the Documents report',
+'   refreshed; the rows that changed flash and a short notice',
+'   appears. While a model is reading, its seconds count up every',
+'   second. dlaLive is defined once for the whole app on page 0. */',
+'dlaLive.start({',
+'    regions : ["documents"],',
+'    marker  : "documents"',
+'});',
 'setInterval(function () {',
-'    var inProgress = document.querySelector("#documents .fa-clock-o, #documents .fa-anim-spin");',
-'    if (inProgress) {',
-'        apex.region("documents").refresh();',
-'    }',
-'}, 30000);'))
+'    document.querySelectorAll("#documents .fa-anim-spin").forEach(function (icon) {',
+'        var cell = icon.closest("tr").querySelector(''td[headers="SECONDS"]'');',
+'        if (cell) { cell.textContent = (parseInt(cell.textContent, 10) || 0) + 1; }',
+'    });',
+'}, 1000);'))
 ,p_step_template=>4073832297226169690
 ,p_page_template_options=>'#DEFAULT#'
 ,p_protection_level=>'C'
 ,p_page_component_map=>'03'
 ,p_created_on=>wwv_flow_imp.dz('20261120014804Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121202019Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121205451Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 );
@@ -1600,7 +1770,7 @@ wwv_flow_imp_page.create_report_region(
 ,p_sort_null=>'L'
 ,p_plug_query_strip_html=>'N'
 ,p_created_on=>wwv_flow_imp.dz('20261120015119Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121202019Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205451Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
@@ -1623,12 +1793,12 @@ wwv_flow_imp_page.create_report_columns(
 ,p_column_alias=>'DOCUMENT_STATUS'
 ,p_column_display_sequence=>30
 ,p_column_heading=>'Status'
-,p_column_html_expression=>'<a class="#STATUS_CLASS#" href="#STATUS_LINK#">#STATUS_LABEL#</a>'
+,p_column_html_expression=>'<a class="#STATUS_CLASS#" data-doc="#DOCUMENT_ID#" href="#STATUS_LINK#">#STATUS_LABEL#</a>'
 ,p_heading_alignment=>'LEFT'
 ,p_display_as=>'WITHOUT_MODIFICATION'
 ,p_derived_column=>'N'
 ,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121202019Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205451Z')
 ,p_updated_by=>'GHALL'
 );
 wwv_flow_imp_page.create_report_columns(
@@ -1866,8 +2036,54 @@ wwv_flow_imp_page.create_page_item(
 ,p_updated_by=>'GHALL'
 );
 wwv_flow_imp_page.create_page_process(
- p_id=>wwv_flow_imp.id(63239773795656505)
+ p_id=>wwv_flow_imp.id(63544922338822236)
 ,p_process_sequence=>10
+,p_process_point=>'ON_DEMAND'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'LIVE_STATUS'
+,p_static_id=>'live-status'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/* ------------------------------------------------------------',
+'   Process : LIVE_STATUS (Ajax callback, 11/21/2026)',
+'   Purpose : Called by the page every few seconds. Returns one',
+'             small JSON row per recent document: id, file name,',
+'             document status, and a fingerprint of its reads',
+'             (extraction id + status). The page compares this',
+'             with the last answer and refreshes only when',
+'             something changed. Read-only.',
+'   ------------------------------------------------------------ */',
+'DECLARE',
+'    l_out CLOB;',
+'BEGIN',
+'    SELECT JSON_ARRAYAGG(',
+'               JSON_OBJECT(''id'' VALUE x.document_id,',
+'                           ''f''  VALUE x.file_name,',
+'                           ''s''  VALUE x.status,',
+'                           ''e''  VALUE x.reads)',
+'               ORDER BY x.document_id DESC RETURNING CLOB)',
+'    INTO   l_out',
+'    FROM  (SELECT d.document_id,',
+'                  d.file_name,',
+'                  d.status,',
+'                  (SELECT LISTAGG(e.extraction_id || e.status, '','')',
+'                          WITHIN GROUP (ORDER BY e.extraction_id)',
+'                   FROM   dla_extractions e',
+'                   WHERE  e.document_id = d.document_id) AS reads',
+'           FROM   dla_documents d',
+'           ORDER  BY d.document_id DESC',
+'           FETCH FIRST 50 ROWS ONLY) x;',
+'    apex_util.prn(NVL(l_out, ''[]''), FALSE);',
+'END;'))
+,p_process_clob_language=>'PLSQL'
+,p_internal_uid=>63544922338822236
+,p_created_on=>wwv_flow_imp.dz('20261121205450Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205450Z')
+,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(63239773795656505)
+,p_process_sequence=>20
 ,p_process_point=>'AFTER_SUBMIT'
 ,p_process_type=>'NATIVE_PLSQL'
 ,p_process_name=>'Submit document'
@@ -1913,7 +2129,7 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_success_message=>'Received. Each invoice is read, checked and loaded by the agent.'
 ,p_internal_uid=>63239773795656505
 ,p_created_on=>wwv_flow_imp.dz('20261120015119Z')
-,p_updated_on=>wwv_flow_imp.dz('20261120024121Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205451Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
@@ -3056,14 +3272,27 @@ wwv_flow_imp_page.create_page(
 '  if (id && f) {',
 '    f.src = apex.server.url({ p_request: ''APPLICATION_PROCESS=SHOW_DOCUMENT'', x01: id });',
 '  }',
-'})();'))
+'})();',
+'',
+'/* Live updates (11/21/2026): when either model finishes reading the',
+'   chosen invoice, the three comparison regions refresh by themselves',
+'   and a short notice appears. No Refresh click needed. dlaLive is on',
+'   page 0. */',
+'if ($v("P4_DOCUMENT_ID")) {',
+'    dlaLive.start({',
+'        regions   : ["What each model read", "Lines: local model", "Lines: OCI Generative AI"],',
+'        marker    : "What each model read",',
+'        filter    : function (d) { return String(d.id) === $v("P4_DOCUMENT_ID"); },',
+'        readToast : true',
+'    });',
+'}'))
 ,p_inline_css=>'#dla-document { width: 100%; height: 74vh; border: 0; background: #fff; }'
 ,p_step_template=>4073832297226169690
 ,p_page_template_options=>'#DEFAULT#'
 ,p_protection_level=>'C'
 ,p_page_component_map=>'03'
 ,p_created_on=>wwv_flow_imp.dz('20261121190432Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121202412Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121210019Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 );
@@ -3085,296 +3314,10 @@ wwv_flow_imp_page.create_page_plug(
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
-wwv_flow_imp_page.create_page_plug(
- p_id=>wwv_flow_imp.id(63496870424519405)
-,p_plug_name=>'Invoice'
-,p_static_id=>'invoice'
-,p_icon_css_classes=>'fa-file-pdf-o'
-,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
-,p_plug_template=>4073835273271169698
-,p_plug_display_sequence=>20
-,p_plug_grid_column_span=>5
-,p_plug_item_display_point=>'ABOVE'
-,p_location=>null
-,p_plug_source=>'<iframe id="dla-document" title="Invoice" style="width:100%; height:74vh; border:0; background:#fff;"></iframe>'
-,p_plug_display_condition_type=>'ITEM_IS_NOT_NULL'
-,p_plug_display_when_condition=>'P4_DOCUMENT_ID'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'expand_shortcuts', 'N',
-  'output_as', 'HTML')).to_clob
-,p_created_on=>wwv_flow_imp.dz('20261121191420Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121191420Z')
-,p_created_by=>'GHALL'
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_region(
- p_id=>wwv_flow_imp.id(63499826873519435)
-,p_name=>'Lines: local model'
-,p_static_id=>'lines-local-model'
-,p_parent_plug_id=>wwv_flow_imp.id(63496998212519406)
-,p_template=>4073835273271169698
-,p_display_sequence=>20
-,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
-,p_component_template_options=>'#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight'
-,p_grid_column_span=>6
-,p_source_type=>'NATIVE_SQL_REPORT'
-,p_query_type=>'SQL'
-,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'/* Page 4: invoice lines in the latest read by the local model. */',
-'SELECT jt.line_number, jt.description, jt.quantity, jt.unit_price, jt.amount',
-'FROM dla_extractions e,',
-' JSON_TABLE(NVL(e.extracted_json, ''{}''), ''$.line_items[*]'' COLUMNS (',
-'  line_number FOR ORDINALITY, description VARCHAR2(1000) PATH ''$.description'',',
-'  quantity NUMBER PATH ''$.quantity'', unit_price NUMBER PATH ''$.unit_price'', amount NUMBER PATH ''$.amount'')) jt',
-'WHERE e.extraction_id = (SELECT MAX(x.extraction_id) FROM dla_extractions x',
-'  WHERE x.document_id = :P4_DOCUMENT_ID AND x.model_code = ''OLLAMA'')'))
-,p_ajax_enabled=>'Y'
-,p_ajax_items_to_submit=>'P4_DOCUMENT_ID'
-,p_lazy_loading=>false
-,p_query_row_template=>2540130677583398057
-,p_query_num_rows=>100
-,p_query_options=>'DERIVED_REPORT_COLUMNS'
-,p_query_no_data_found=>'No lines.'
-,p_query_num_rows_type=>'NEXT_PREVIOUS_LINKS'
-,p_pagination_display_position=>'BOTTOM_RIGHT'
-,p_csv_output=>'N'
-,p_prn_output=>'N'
-,p_sort_null=>'L'
-,p_plug_query_strip_html=>'N'
-,p_created_on=>wwv_flow_imp.dz('20261121191533Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_created_by=>'GHALL'
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_columns(
- p_id=>wwv_flow_imp.id(63500360336519440)
-,p_query_column_id=>5
-,p_column_alias=>'AMOUNT'
-,p_column_display_sequence=>50
-,p_column_heading=>'Amount'
-,p_column_format=>'FM999G999G990D00'
-,p_column_alignment=>'RIGHT'
-,p_heading_alignment=>'RIGHT'
-,p_disable_sort_column=>'N'
-,p_derived_column=>'N'
-,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_columns(
- p_id=>wwv_flow_imp.id(63500054704519437)
-,p_query_column_id=>2
-,p_column_alias=>'DESCRIPTION'
-,p_column_display_sequence=>20
-,p_column_heading=>'Description'
-,p_heading_alignment=>'LEFT'
-,p_disable_sort_column=>'N'
-,p_derived_column=>'N'
-,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_columns(
- p_id=>wwv_flow_imp.id(63499976516519436)
-,p_query_column_id=>1
-,p_column_alias=>'LINE_NUMBER'
-,p_column_display_sequence=>10
-,p_column_heading=>'#'
-,p_column_alignment=>'RIGHT'
-,p_heading_alignment=>'RIGHT'
-,p_default_sort_column_sequence=>1
-,p_disable_sort_column=>'N'
-,p_derived_column=>'N'
-,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_columns(
- p_id=>wwv_flow_imp.id(63500198117519438)
-,p_query_column_id=>3
-,p_column_alias=>'QUANTITY'
-,p_column_display_sequence=>30
-,p_column_heading=>'Qty'
-,p_column_format=>'FM999G999G990D00'
-,p_column_alignment=>'RIGHT'
-,p_heading_alignment=>'RIGHT'
-,p_disable_sort_column=>'N'
-,p_derived_column=>'N'
-,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_columns(
- p_id=>wwv_flow_imp.id(63500246930519439)
-,p_query_column_id=>4
-,p_column_alias=>'UNIT_PRICE'
-,p_column_display_sequence=>40
-,p_column_heading=>'Unit price'
-,p_column_format=>'FM999G999G990D00'
-,p_column_alignment=>'RIGHT'
-,p_heading_alignment=>'RIGHT'
-,p_disable_sort_column=>'N'
-,p_derived_column=>'N'
-,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_region(
- p_id=>wwv_flow_imp.id(63500490638519441)
-,p_name=>'Lines: OCI Generative AI'
-,p_static_id=>'lines-oci-generative-ai'
-,p_parent_plug_id=>wwv_flow_imp.id(63496998212519406)
-,p_template=>4073835273271169698
-,p_display_sequence=>30
-,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
-,p_component_template_options=>'#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight'
-,p_new_grid_row=>false
-,p_grid_column_span=>6
-,p_source_type=>'NATIVE_SQL_REPORT'
-,p_query_type=>'SQL'
-,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
-'/* Page 4: invoice lines in the latest read by the OCI reader. */',
-'SELECT jt.line_number, jt.description, jt.quantity, jt.unit_price, jt.amount',
-'FROM dla_extractions e,',
-' JSON_TABLE(NVL(e.extracted_json, ''{}''), ''$.line_items[*]'' COLUMNS (',
-'  line_number FOR ORDINALITY, description VARCHAR2(1000) PATH ''$.description'',',
-'  quantity NUMBER PATH ''$.quantity'', unit_price NUMBER PATH ''$.unit_price'', amount NUMBER PATH ''$.amount'')) jt',
-'WHERE e.extraction_id = (SELECT MAX(x.extraction_id) FROM dla_extractions x',
-'  WHERE x.document_id = :P4_DOCUMENT_ID AND x.model_code = ''OCI_GENAI'')'))
-,p_ajax_enabled=>'Y'
-,p_ajax_items_to_submit=>'P4_DOCUMENT_ID'
-,p_lazy_loading=>false
-,p_query_row_template=>2540130677583398057
-,p_query_num_rows=>100
-,p_query_options=>'DERIVED_REPORT_COLUMNS'
-,p_query_no_data_found=>'No lines.'
-,p_query_num_rows_type=>'NEXT_PREVIOUS_LINKS'
-,p_pagination_display_position=>'BOTTOM_RIGHT'
-,p_csv_output=>'N'
-,p_prn_output=>'N'
-,p_sort_null=>'L'
-,p_plug_query_strip_html=>'N'
-,p_created_on=>wwv_flow_imp.dz('20261121191533Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_created_by=>'GHALL'
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_columns(
- p_id=>wwv_flow_imp.id(63500931502519446)
-,p_query_column_id=>5
-,p_column_alias=>'AMOUNT'
-,p_column_display_sequence=>50
-,p_column_heading=>'Amount'
-,p_column_format=>'FM999G999G990D00'
-,p_column_alignment=>'RIGHT'
-,p_heading_alignment=>'RIGHT'
-,p_disable_sort_column=>'N'
-,p_derived_column=>'N'
-,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_columns(
- p_id=>wwv_flow_imp.id(63500694284519443)
-,p_query_column_id=>2
-,p_column_alias=>'DESCRIPTION'
-,p_column_display_sequence=>20
-,p_column_heading=>'Description'
-,p_heading_alignment=>'LEFT'
-,p_disable_sort_column=>'N'
-,p_derived_column=>'N'
-,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_columns(
- p_id=>wwv_flow_imp.id(63500588261519442)
-,p_query_column_id=>1
-,p_column_alias=>'LINE_NUMBER'
-,p_column_display_sequence=>10
-,p_column_heading=>'#'
-,p_column_alignment=>'RIGHT'
-,p_heading_alignment=>'RIGHT'
-,p_default_sort_column_sequence=>1
-,p_disable_sort_column=>'N'
-,p_derived_column=>'N'
-,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_columns(
- p_id=>wwv_flow_imp.id(63500739293519444)
-,p_query_column_id=>3
-,p_column_alias=>'QUANTITY'
-,p_column_display_sequence=>30
-,p_column_heading=>'Qty'
-,p_column_format=>'FM999G999G990D00'
-,p_column_alignment=>'RIGHT'
-,p_heading_alignment=>'RIGHT'
-,p_disable_sort_column=>'N'
-,p_derived_column=>'N'
-,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_report_columns(
- p_id=>wwv_flow_imp.id(63500872302519445)
-,p_query_column_id=>4
-,p_column_alias=>'UNIT_PRICE'
-,p_column_display_sequence=>40
-,p_column_heading=>'Unit price'
-,p_column_format=>'FM999G999G990D00'
-,p_column_alignment=>'RIGHT'
-,p_heading_alignment=>'RIGHT'
-,p_disable_sort_column=>'N'
-,p_derived_column=>'N'
-,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_page_plug(
- p_id=>wwv_flow_imp.id(63496442348519401)
-,p_plug_name=>'Pick an invoice'
-,p_static_id=>'pick-an-invoice'
-,p_region_template_options=>'#DEFAULT#'
-,p_plug_template=>4502917002193490937
-,p_plug_display_sequence=>10
-,p_plug_item_display_point=>'ABOVE'
-,p_location=>null
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'expand_shortcuts', 'N',
-  'output_as', 'HTML')).to_clob
-,p_created_on=>wwv_flow_imp.dz('20261121191420Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121191420Z')
-,p_created_by=>'GHALL'
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_page_plug(
- p_id=>wwv_flow_imp.id(63496998212519406)
-,p_plug_name=>'Side by side'
-,p_static_id=>'side-by-side'
-,p_icon_css_classes=>'fa-columns'
-,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
-,p_plug_template=>4073835273271169698
-,p_plug_display_sequence=>30
-,p_plug_new_grid_row=>false
-,p_plug_grid_column_span=>7
-,p_plug_item_display_point=>'ABOVE'
-,p_location=>null
-,p_plug_display_condition_type=>'ITEM_IS_NOT_NULL'
-,p_plug_display_when_condition=>'P4_DOCUMENT_ID'
-,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
-  'expand_shortcuts', 'N',
-  'output_as', 'HTML')).to_clob
-,p_created_on=>wwv_flow_imp.dz('20261121191420Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121191420Z')
-,p_created_by=>'GHALL'
-,p_updated_by=>'GHALL'
-);
 wwv_flow_imp_page.create_report_region(
  p_id=>wwv_flow_imp.id(63499258764519429)
 ,p_name=>'What each model read'
-,p_static_id=>'what-each-model-read'
+,p_static_id=>'dla-p4-fields'
 ,p_parent_plug_id=>wwv_flow_imp.id(63496998212519406)
 ,p_template=>4073835273271169698
 ,p_display_sequence=>10
@@ -3459,7 +3402,7 @@ wwv_flow_imp_page.create_report_region(
 ,p_sort_null=>'L'
 ,p_plug_query_strip_html=>'N'
 ,p_created_on=>wwv_flow_imp.dz('20261121191533Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121202412Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205914Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
@@ -3546,6 +3489,292 @@ wwv_flow_imp_page.create_report_columns(
 ,p_hidden_column=>'Y'
 ,p_derived_column=>'N'
 ,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_region(
+ p_id=>wwv_flow_imp.id(63499826873519435)
+,p_name=>'Lines: local model'
+,p_static_id=>'dla-p4-lines-local'
+,p_parent_plug_id=>wwv_flow_imp.id(63496998212519406)
+,p_template=>4073835273271169698
+,p_display_sequence=>20
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
+,p_component_template_options=>'#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight'
+,p_grid_column_span=>6
+,p_source_type=>'NATIVE_SQL_REPORT'
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/* Page 4: invoice lines in the latest read by the local model. */',
+'SELECT jt.line_number, jt.description, jt.quantity, jt.unit_price, jt.amount',
+'FROM dla_extractions e,',
+' JSON_TABLE(NVL(e.extracted_json, ''{}''), ''$.line_items[*]'' COLUMNS (',
+'  line_number FOR ORDINALITY, description VARCHAR2(1000) PATH ''$.description'',',
+'  quantity NUMBER PATH ''$.quantity'', unit_price NUMBER PATH ''$.unit_price'', amount NUMBER PATH ''$.amount'')) jt',
+'WHERE e.extraction_id = (SELECT MAX(x.extraction_id) FROM dla_extractions x',
+'  WHERE x.document_id = :P4_DOCUMENT_ID AND x.model_code = ''OLLAMA'')'))
+,p_ajax_enabled=>'Y'
+,p_ajax_items_to_submit=>'P4_DOCUMENT_ID'
+,p_lazy_loading=>false
+,p_query_row_template=>2540130677583398057
+,p_query_num_rows=>100
+,p_query_options=>'DERIVED_REPORT_COLUMNS'
+,p_query_no_data_found=>'No lines.'
+,p_query_num_rows_type=>'NEXT_PREVIOUS_LINKS'
+,p_pagination_display_position=>'BOTTOM_RIGHT'
+,p_csv_output=>'N'
+,p_prn_output=>'N'
+,p_sort_null=>'L'
+,p_plug_query_strip_html=>'N'
+,p_created_on=>wwv_flow_imp.dz('20261121191533Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205914Z')
+,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63500360336519440)
+,p_query_column_id=>5
+,p_column_alias=>'AMOUNT'
+,p_column_display_sequence=>50
+,p_column_heading=>'Amount'
+,p_column_format=>'FM999G999G990D00'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63500054704519437)
+,p_query_column_id=>2
+,p_column_alias=>'DESCRIPTION'
+,p_column_display_sequence=>20
+,p_column_heading=>'Description'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63499976516519436)
+,p_query_column_id=>1
+,p_column_alias=>'LINE_NUMBER'
+,p_column_display_sequence=>10
+,p_column_heading=>'#'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_default_sort_column_sequence=>1
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63500198117519438)
+,p_query_column_id=>3
+,p_column_alias=>'QUANTITY'
+,p_column_display_sequence=>30
+,p_column_heading=>'Qty'
+,p_column_format=>'FM999G999G990D00'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63500246930519439)
+,p_query_column_id=>4
+,p_column_alias=>'UNIT_PRICE'
+,p_column_display_sequence=>40
+,p_column_heading=>'Unit price'
+,p_column_format=>'FM999G999G990D00'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_region(
+ p_id=>wwv_flow_imp.id(63500490638519441)
+,p_name=>'Lines: OCI Generative AI'
+,p_static_id=>'dla-p4-lines-oci'
+,p_parent_plug_id=>wwv_flow_imp.id(63496998212519406)
+,p_template=>4073835273271169698
+,p_display_sequence=>30
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
+,p_component_template_options=>'#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight'
+,p_new_grid_row=>false
+,p_grid_column_span=>6
+,p_source_type=>'NATIVE_SQL_REPORT'
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/* Page 4: invoice lines in the latest read by the OCI reader. */',
+'SELECT jt.line_number, jt.description, jt.quantity, jt.unit_price, jt.amount',
+'FROM dla_extractions e,',
+' JSON_TABLE(NVL(e.extracted_json, ''{}''), ''$.line_items[*]'' COLUMNS (',
+'  line_number FOR ORDINALITY, description VARCHAR2(1000) PATH ''$.description'',',
+'  quantity NUMBER PATH ''$.quantity'', unit_price NUMBER PATH ''$.unit_price'', amount NUMBER PATH ''$.amount'')) jt',
+'WHERE e.extraction_id = (SELECT MAX(x.extraction_id) FROM dla_extractions x',
+'  WHERE x.document_id = :P4_DOCUMENT_ID AND x.model_code = ''OCI_GENAI'')'))
+,p_ajax_enabled=>'Y'
+,p_ajax_items_to_submit=>'P4_DOCUMENT_ID'
+,p_lazy_loading=>false
+,p_query_row_template=>2540130677583398057
+,p_query_num_rows=>100
+,p_query_options=>'DERIVED_REPORT_COLUMNS'
+,p_query_no_data_found=>'No lines.'
+,p_query_num_rows_type=>'NEXT_PREVIOUS_LINKS'
+,p_pagination_display_position=>'BOTTOM_RIGHT'
+,p_csv_output=>'N'
+,p_prn_output=>'N'
+,p_sort_null=>'L'
+,p_plug_query_strip_html=>'N'
+,p_created_on=>wwv_flow_imp.dz('20261121191533Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205914Z')
+,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63500931502519446)
+,p_query_column_id=>5
+,p_column_alias=>'AMOUNT'
+,p_column_display_sequence=>50
+,p_column_heading=>'Amount'
+,p_column_format=>'FM999G999G990D00'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63500694284519443)
+,p_query_column_id=>2
+,p_column_alias=>'DESCRIPTION'
+,p_column_display_sequence=>20
+,p_column_heading=>'Description'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63500588261519442)
+,p_query_column_id=>1
+,p_column_alias=>'LINE_NUMBER'
+,p_column_display_sequence=>10
+,p_column_heading=>'#'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_default_sort_column_sequence=>1
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63500739293519444)
+,p_query_column_id=>3
+,p_column_alias=>'QUANTITY'
+,p_column_display_sequence=>30
+,p_column_heading=>'Qty'
+,p_column_format=>'FM999G999G990D00'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63500872302519445)
+,p_query_column_id=>4
+,p_column_alias=>'UNIT_PRICE'
+,p_column_display_sequence=>40
+,p_column_heading=>'Unit price'
+,p_column_format=>'FM999G999G990D00'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(63496870424519405)
+,p_plug_name=>'Invoice'
+,p_static_id=>'invoice'
+,p_icon_css_classes=>'fa-file-pdf-o'
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
+,p_plug_template=>4073835273271169698
+,p_plug_display_sequence=>20
+,p_plug_grid_column_span=>5
+,p_plug_item_display_point=>'ABOVE'
+,p_location=>null
+,p_plug_source=>'<iframe id="dla-document" title="Invoice" style="width:100%; height:74vh; border:0; background:#fff;"></iframe>'
+,p_plug_display_condition_type=>'ITEM_IS_NOT_NULL'
+,p_plug_display_when_condition=>'P4_DOCUMENT_ID'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'HTML')).to_clob
+,p_created_on=>wwv_flow_imp.dz('20261121191420Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121191420Z')
+,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(63496442348519401)
+,p_plug_name=>'Pick an invoice'
+,p_static_id=>'pick-an-invoice'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>4502917002193490937
+,p_plug_display_sequence=>10
+,p_plug_item_display_point=>'ABOVE'
+,p_location=>null
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'HTML')).to_clob
+,p_created_on=>wwv_flow_imp.dz('20261121191420Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121191420Z')
+,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(63496998212519406)
+,p_plug_name=>'Side by side'
+,p_static_id=>'side-by-side'
+,p_icon_css_classes=>'fa-columns'
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
+,p_plug_template=>4073835273271169698
+,p_plug_display_sequence=>30
+,p_plug_new_grid_row=>false
+,p_plug_grid_column_span=>7
+,p_plug_item_display_point=>'ABOVE'
+,p_location=>null
+,p_plug_display_condition_type=>'ITEM_IS_NOT_NULL'
+,p_plug_display_when_condition=>'P4_DOCUMENT_ID'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'HTML')).to_clob
+,p_created_on=>wwv_flow_imp.dz('20261121191420Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121191420Z')
+,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
 wwv_flow_imp_page.create_page_button(
@@ -3644,6 +3873,52 @@ wwv_flow_imp_page.create_page_item(
 ,p_updated_by=>'GHALL'
 );
 wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(63545042587822237)
+,p_process_sequence=>10
+,p_process_point=>'ON_DEMAND'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'LIVE_STATUS'
+,p_static_id=>'live-status'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/* ------------------------------------------------------------',
+'   Process : LIVE_STATUS (Ajax callback, 11/21/2026)',
+'   Purpose : Called by the page every few seconds. Returns one',
+'             small JSON row per recent document: id, file name,',
+'             document status, and a fingerprint of its reads',
+'             (extraction id + status). The page compares this',
+'             with the last answer and refreshes only when',
+'             something changed. Read-only.',
+'   ------------------------------------------------------------ */',
+'DECLARE',
+'    l_out CLOB;',
+'BEGIN',
+'    SELECT JSON_ARRAYAGG(',
+'               JSON_OBJECT(''id'' VALUE x.document_id,',
+'                           ''f''  VALUE x.file_name,',
+'                           ''s''  VALUE x.status,',
+'                           ''e''  VALUE x.reads)',
+'               ORDER BY x.document_id DESC RETURNING CLOB)',
+'    INTO   l_out',
+'    FROM  (SELECT d.document_id,',
+'                  d.file_name,',
+'                  d.status,',
+'                  (SELECT LISTAGG(e.extraction_id || e.status, '','')',
+'                          WITHIN GROUP (ORDER BY e.extraction_id)',
+'                   FROM   dla_extractions e',
+'                   WHERE  e.document_id = d.document_id) AS reads',
+'           FROM   dla_documents d',
+'           ORDER  BY d.document_id DESC',
+'           FETCH FIRST 50 ROWS ONLY) x;',
+'    apex_util.prn(NVL(l_out, ''[]''), FALSE);',
+'END;'))
+,p_process_clob_language=>'PLSQL'
+,p_internal_uid=>63545042587822237
+,p_created_on=>wwv_flow_imp.dz('20261121205649Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205649Z')
+,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_page_process(
  p_id=>wwv_flow_imp.id(63501069446519447)
 ,p_process_sequence=>20
 ,p_process_point=>'AFTER_SUBMIT'
@@ -3663,7 +3938,9 @@ wwv_flow_imp_page.create_page_process(
 '    END IF;',
 '',
 '    l_msg := dla_pkg.compare_document(p_document_id => TO_NUMBER(:P4_DOCUMENT_ID));',
-'    :P4_MESSAGE := l_msg;',
+'    /* The page now updates by itself (11/21/2026), so the package''s',
+'       "click Refresh" hint is replaced with what will happen. */',
+'    :P4_MESSAGE := REPLACE(l_msg, ''click Refresh in a few seconds'', ''its column fills in by itself in a few seconds'');',
 'END;'))
 ,p_process_clob_language=>'PLSQL'
 ,p_error_display_location=>'INLINE_IN_NOTIFICATION'
@@ -3671,7 +3948,7 @@ wwv_flow_imp_page.create_page_process(
 ,p_process_success_message=>'&P4_MESSAGE.'
 ,p_internal_uid=>63501069446519447
 ,p_created_on=>wwv_flow_imp.dz('20261121191534Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121191534Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121205649Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
