@@ -2,6 +2,14 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/21/2026 (afternoon, 3:15 PM) - Local-model run, quiet live updates, Refresh buttons removed
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Gary decided: no double load; the local model is the agent; Compare Models is there when someone wants a comparison. Reset (DLA_15), WATCH_MODEL = OLLAMA (DLA_16), six PDFs into the inbox with page 2 on screen. | DEV + relay | **Passed.** Page 2 filled in by itself: 2 Loaded, 4 Needs review, 5 to 13 s each. |
+| 2 | Gary saw the Documents report redraw with the APEX spinner and read it as a page refresh. Page 0: live regions get class `dla-quiet`, which hides the APEX loading spinner, so only the changed row's flash shows. Refresh buttons (REFRESH) removed from page 2 and page 4. | DEV, Page Designer | Saved. Gary: "this looks good, you did a good job." |
+| 3 | Note: the 3:00 PM CHANGELOG and handoff updates were found reverted on disk at 3:15 (files back to the 2:30 versions); rewritten. | repository | Check GitHub Desktop History that the 3:04 commit has them. |
+
 ## 11/21/2026 (afternoon, 3:00 PM) - OCI run, compare, live updates on Home, Upload Invoice and Compare
 
 | Step | What | Where | Result |
