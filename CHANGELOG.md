@@ -2,6 +2,20 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/21/2026 - New desktop set up and proven (no code changes)
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | New PC: Acer Predator Orion 6000 (Core Ultra 7 265KF, RTX 5060 Ti 16 GB, 16 GB DDR5, 1 TB), Windows user `garyh`. Repository synced by OneDrive to `C:\Users\garyh\OneDrive\Documents\GitHub\document-loading-agent`. SQL Developer 26.2 (four connections, wallets in `C:\wallets`) and GitHub Desktop done 11/20 night and 11/21 morning. | New PC | Done. |
+| 2 | Node.js v26.13.1 LTS (`C:\Program Files\nodejs`, npm 11.20.0). PowerShell refused `npm` ("running scripts is disabled"); fixed with `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`. | New PC | `node -v` = v26.13.1, `npm -v` = 11.20.0. |
+| 3 | Poppler 26.09.0 with `winget install --id oschwartz10612.Poppler -e` (unpacked under `%LOCALAPPDATA%\Microsoft\WinGet\Packages\...\poppler-26.09.0\Library\bin`; winget put `pdftoppm` on PATH). | New PC | Done. |
+| 4 | Ollama (OllamaSetup.exe, no account) and `ollama pull qwen2.5vl:7b` (6.0 GB). | New PC | `ollama list` shows qwen2.5vl:7b 6.0 GB. |
+| 5 | `relay\dla-relay-settings.json` had come over with OneDrive (ords_base_url, relay_token, watch_folder; no Poppler path, the relay finds pdftoppm on PATH). Nothing changed. | New PC | Checked. |
+| 6 | `db/data/DLA_16_WATCH_MODEL.sql` run with the line set to OLLAMA (file changed to match in this commit). | DEV | WATCH_MODEL = OLLAMA, updated 21-NOV-26. |
+| 7 | Relay 1.2.0 started (`node relay\dla-relay.js`); it created `C:\DLA\inbox` with `done` and `failed`. Two gas PDFs copied into the inbox one after the other. | New PC and DEV | **Passed.** First invoice 55 s (includes loading the model onto the card), second **6 s**. The laptop took 262 to 319 s. |
+| 8 | Oracle Cloud sign-in forced a password change (identity-domain password expiry). Reset by the Forgot-password email. Nothing in the project uses that password. | OCI | Done. |
+| 9 | `docs/DLA_SESSION_HANDOFF.md` brought level with the project copy. | - | Done. |
+
 ## 11/19/2026 (late evening) - Phase 4: The review page, and the watched folder (written)
 
 | Step | What | Where | Result |

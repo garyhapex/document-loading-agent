@@ -32,7 +32,7 @@ ALTER SESSION SET CURRENT_SCHEMA = WKSP_WKSPPRDWORKSPACE;
    Step 1  : Set WATCH_MODEL
    ------------------------------------------------------------ */
 DECLARE
-    l_value  VARCHAR2(30) := 'OCI_GENAI';   /* CHANGE HERE: OLLAMA or OCI_GENAI */
+    l_value  VARCHAR2(30) := 'OLLAMA';   /* CHANGE HERE: OLLAMA or OCI_GENAI */
 BEGIN
     IF l_value NOT IN ('OLLAMA', 'OCI_GENAI') THEN
         RAISE_APPLICATION_ERROR(-20016, 'WATCH_MODEL must be OLLAMA or OCI_GENAI, not ' || l_value || '.');
