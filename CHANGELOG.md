@@ -2,6 +2,16 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/21/2026 (afternoon, 3:00 PM) - OCI run, compare, live updates on Home, Upload Invoice and Compare
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Reset (DLA_15), WATCH_MODEL = OCI_GENAI (DLA_16), six gas PDFs into `C:\DLA\inbox`. | DEV + relay | **Passed.** 6 received, 2 loaded by the agent, 4 waiting; OCI 5.4 s average. |
+| 2 | **Mistake (Claude):** Gary asked three times how comparing could work after a reset; Claude kept giving the reset steps. The reset deleted the local model's reads from the earlier test, so Compare had nothing on the local side until "Read with both models" was clicked per invoice. Lesson: when Gary questions a step, stop and answer that question; do not repeat the step. Owed: a reset that keeps the model reads (Gary has not approved a design for it). | - | Compare then run on GAS_05, GAS_04, GAS_03: all fields Same; local 4.4 to 8 s, OCI 4.8 to 5.8 s. |
+| 3 | Gary: no Refresh button, no 30-second timer; things should change by themselves. Mockup approved ("that I like"). | - | Approved. |
+| 4 | Page 0 region "Status badge colours" now also holds `dlaLive` (one script for the app): every 3 seconds (15 when the tab is hidden) it calls the page's LIVE_STATUS Ajax callback, compares the answer with the last one, and only when something changed refreshes the named regions, flashes the changed rows (found by `data-doc`), and shows a notice top right in the badge colours ("GAS_03 needs review", "GAS_01 loaded by the agent", "Both models have read ..."). Regions are named by title, because APEX 26.1 renders R-ids for regions whose Static ID shows only as a default in Page Designer. A green "Live" dot sits on the watched region's title. | DEV, Page Designer | Saved. |
+| 5 | Pages 1, 2, 4 each got Ajax callback LIVE_STATUS (read-only JSON: id, file, status, extraction-id+status fingerprint for the last 50 documents) and page JavaScript calling `dlaLive.start`. Page 2: the 30-second timer is gone; seconds count up every second while a model reads. Page 4: only the chosen invoice counts; its message now says the local column "fills in by itself". Home: cards and Latest documents refresh. Badges carry `data-doc`. | DEV, Page Designer | **Tested:** GAS_03 compare, local column filled in by itself with no click; Live dot on Home, page 2, page 4; notice shows top right. |
+
 ## 11/21/2026 (afternoon, 2:30 PM) - Reset, local-model test, status badges on every page
 
 | Step | What | Where | Result |

@@ -33,7 +33,7 @@ prompt APPLICATION 300 - Document Loading Agent
 -- Application Export:
 --   Application:     300
 --   Name:            Document Loading Agent
---   Date and Time:   21:03 Saturday November 21, 2026
+--   Date and Time:   21:15 Saturday November 21, 2026
 --   Exported By:     GHALL
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -41,7 +41,7 @@ prompt APPLICATION 300 - Document Loading Agent
 --       Items:                   20
 --       Processes:               16
 --       Regions:                 29
---       Buttons:                 10
+--       Buttons:                  8
 --     Shared Components:
 --       Logic:
 --         Build Options:          1
@@ -105,12 +105,12 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'Document Loading Agent'
 ,p_created_on=>wwv_flow_imp.dz('20261120012444Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121210204Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121211226Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 ,p_file_prefix=>nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>2461366200330
-,p_version_scn=>'51225141532238'
+,p_version_scn=>'51225727043907'
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -1092,7 +1092,7 @@ wwv_flow_imp_page.create_page(
 ,p_protection_level=>'D'
 ,p_page_component_map=>'14'
 ,p_created_on=>wwv_flow_imp.dz('20261120012447Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121210204Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121211138Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 );
@@ -1128,6 +1128,8 @@ wwv_flow_imp_page.create_page_plug(
 '.dla-live { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; font-size: 12px; font-weight: 600; color: #2E7D32; vertical-align: middle; }',
 '.dla-live i { width: 8px; height: 8px; border-radius: 50%; background: #2E7D32; animation: dla-pulse 1.6s ease-in-out infinite; }',
 '@keyframes dla-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }',
+'/* Live regions refresh quietly: no APEX loading spinner. */',
+'.dla-quiet .u-Processing, .dla-quiet .u-Processing-spinner { display: none !important; }',
 '</style>',
 '<script>',
 '/* dlaLive (11/21/2026): live updates for any page.',
@@ -1181,6 +1183,7 @@ wwv_flow_imp_page.create_page_plug(
 '        }',
 '        opt.regions = (opt.regions || []).map(rid).filter(Boolean);',
 '        var markers = (opt.marker ? [].concat(opt.marker) : []).map(rid).filter(Boolean);',
+'        opt.regions.forEach(function (id) { document.getElementById(id).classList.add("dla-quiet"); });',
 '        markers.forEach(marker);',
 '        function flash(changed) {',
 '            changed.forEach(function (d) {',
@@ -1233,7 +1236,7 @@ wwv_flow_imp_page.create_page_plug(
   'expand_shortcuts', 'N',
   'output_as', 'HTML')).to_clob
 ,p_created_on=>wwv_flow_imp.dz('20261121202057Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121210204Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121211138Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
@@ -1654,7 +1657,7 @@ wwv_flow_imp_page.create_page(
 ,p_protection_level=>'C'
 ,p_page_component_map=>'03'
 ,p_created_on=>wwv_flow_imp.dz('20261120014804Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121205451Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121211204Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 );
@@ -1942,25 +1945,6 @@ wwv_flow_imp_page.create_page_plug(
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'expand_shortcuts', 'N',
   'output_as', 'HTML')).to_clob
-,p_created_on=>wwv_flow_imp.dz('20261120015119Z')
-,p_updated_on=>wwv_flow_imp.dz('20261120015119Z')
-,p_created_by=>'GHALL'
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_page_button(
- p_id=>wwv_flow_imp.id(63240853251656516)
-,p_button_sequence=>10
-,p_button_plug_id=>wwv_flow_imp.id(63239841274656506)
-,p_button_name=>'REFRESH'
-,p_static_id=>'refresh'
-,p_show_as_disabled=>false
-,p_button_action=>'SUBMIT'
-,p_button_template_options=>'#DEFAULT#:t-Button--iconLeft'
-,p_button_template_id=>2084305881903810008
-,p_button_image_alt=>'Refresh'
-,p_button_position=>'EDIT'
-,p_button_execute_validations=>'N'
-,p_icon_css_classes=>'fa-refresh'
 ,p_created_on=>wwv_flow_imp.dz('20261120015119Z')
 ,p_updated_on=>wwv_flow_imp.dz('20261120015119Z')
 ,p_created_by=>'GHALL'
@@ -3292,7 +3276,7 @@ wwv_flow_imp_page.create_page(
 ,p_protection_level=>'C'
 ,p_page_component_map=>'03'
 ,p_created_on=>wwv_flow_imp.dz('20261121190432Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121210019Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121211226Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 );
@@ -3791,26 +3775,6 @@ wwv_flow_imp_page.create_page_button(
 ,p_button_image_alt=>'Read with both models'
 ,p_show_processing=>'Y'
 ,p_icon_css_classes=>'fa-columns'
-,p_grid_new_row=>'N'
-,p_grid_new_column=>'Y'
-,p_created_on=>wwv_flow_imp.dz('20261121191420Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121191420Z')
-,p_created_by=>'GHALL'
-,p_updated_by=>'GHALL'
-);
-wwv_flow_imp_page.create_page_button(
- p_id=>wwv_flow_imp.id(63496764478519404)
-,p_button_sequence=>30
-,p_button_plug_id=>wwv_flow_imp.id(63496442348519401)
-,p_button_name=>'REFRESH'
-,p_static_id=>'refresh'
-,p_show_as_disabled=>false
-,p_button_action=>'SUBMIT'
-,p_button_template_options=>'#DEFAULT#:t-Button--iconLeft'
-,p_button_template_id=>2084305881903810008
-,p_button_image_alt=>'Refresh'
-,p_button_execute_validations=>'N'
-,p_icon_css_classes=>'fa-refresh'
 ,p_grid_new_row=>'N'
 ,p_grid_new_column=>'Y'
 ,p_created_on=>wwv_flow_imp.dz('20261121191420Z')
