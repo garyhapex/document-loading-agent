@@ -2,6 +2,15 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/21/2026 (afternoon, last) - Dashboard redone as clickable cards; new Loaded Invoices page
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Gary: the first dashboard was Claude's choice, not his; he wants cards he can click, and a design to approve first. Claude drew a mockup (Home as cards, new Loaded Invoices page); Gary: "just make a nice and clean dashboard, and I should be able to click on something." | - | Approved. Rule: for anything on screen, picture first, Gary's yes, then build. |
+| 2 | Page 5 "Loaded Invoices" (menu entry, icon fa-money): list of every loaded invoice (vendor link, number, dates, total, loaded by AGENT or a person, loaded on, file). Click a vendor: the invoice PDF on the left (Ajax callback SHOW_DOCUMENT, x01 = invoice id), "Invoice as loaded" (label/value), lines, and the audit trail on the right; "Back to the list". | DEV, Page Designer | Saved and checked on CMR-10977: PDF shows, 5 lines, 7 audit rows ending LOADED by AGENT. Lesson: a hidden item must sit in a region that renders, or its value never reaches the page JavaScript. |
+| 3 | Page 1 Home: "What the agent has done" is now a PL/SQL Dynamic Content region drawing 8 clickable cards (received → Upload Invoice; loaded by agent / after review → Loaded Invoices; waiting / rejected → Review Invoices; failed → Upload Invoice; local and OCI seconds → Compare Models), with coloured left edges and icons, styled by page CSS. "Seconds per read" region removed (its two cards are in the same region). "Latest documents": file name and "What happened" are links (Loaded Invoices for loaded, Review for waiting, Compare otherwise). | DEV, Page Designer | Saved and checked: the Waiting card opens Review Invoices. The Cards report template was tried first and looked broken (stretched bars); dropped. |
+| 4 | Application icon: rocket replaced with the blue document icon (Edit Application Definition → User Interface → Change Icon). | DEV, App Builder | Saved; shows on Home. |
+
 ## 11/21/2026 (afternoon, later) - Phase 4: Dashboard, demo script, first application export
 
 | Step | What | Where | Result |
