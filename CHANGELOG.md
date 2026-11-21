@@ -2,6 +2,32 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/21/2026 (evening, 5:20 PM) - Vendors page: Status drop-down, who columns, Oconee Ridge rename
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Gary: column must say "Status" with "Active"/"Inactive" in a drop-down, not On/Off with a switch. ACTIVE_YN column on page 6 changed to a select list, static values Active;Y, Inactive;N, no null, heading Status. | DEV, Page Designer | Done; shows Active/Inactive. |
+| 2 | Gary switched Tallulah to inactive on the Vendors page, so GAS_06 shows the unknown-vendor case again. | DEV, app | Saved. |
+| 3 | `DLA_18_RENAME_SAMPLE_VENDOR.sql` run by Gary. | DEV | 1 row updated: vendor 24 is now Oconee Ridge Utility Locating LLC. |
+| 4 | Gary: "Added by ORDS_PLSQL_GATEWAY - who is that? Should be standard Oracle who columns." `db\data\DLA_19_VENDOR_WHO_COLUMNS.sql`: adds LAST_UPDATED_BY / LAST_UPDATED_ON, trigger DLA_VENDORS_WHO_TRG fills CREATED_BY/ON and LAST_UPDATED_BY/ON from APEX APP_USER (database user outside APEX), corrects the Tallulah row to GHALL. Run by Gary. | DEV | Trigger ENABLED, VALID; Tallulah GHALL. |
+| 5 | Page 6: Last updated by / Last updated on added to the grid (display only). | DEV, Page Designer | Checked in the app. |
+
+## 11/21/2026 (evening, 5:10 PM) - Add vendor from Review, new Vendors page (Gary not happy with the grid)
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Page 3: button ADD_VENDOR in "Problems found" (green, fa-plus, label 'Add "&P3_VENDOR_NAME." to vendors', shown only while P3_VENDOR_ID is null). Process "Add the vendor to the vendor list" (after submit, seq 5): inserts the vendor (or reactivates it), sets P3_VENDOR_ID, logs VENDOR_ADDED. "Save the corrections..." now runs for SAVE,APPROVE,ADD_VENDOR. Branch target now carries `&success_msg=#SUCCESS_MSG#` (page 3 messages finally show). | DEV, Page Designer | **Tested by Gary on GAS_06:** Tallulah added, picked, checks ran again, "No problems". (Claude's own click was blocked by the safety check because it changes data.) |
+| 2 | Page 6 "Vendors" (menu, fa-truck): editable Interactive Grid on DLA_VENDORS from the wizard; VENDOR_ID hidden, Active = switch defaulting to Y, Added by / Added on read-only. | DEV, page wizard + Page Designer | Works, but **Gary rejected the look**: "On" text and double-click-to-switch is a poor design ("Really? That's your choice of a design?"). Also: rows added from the app show Added by = ORDS_PLSQL_GATEWAY, not the user. |
+| 3 | Not done yet: DLA_18 (Kennesaw Ridge still in the list); Tallulah is still active (GAS_06 no longer shows the unknown-vendor case until it is switched off). | - | Gary stopped for the day: "I'm done." |
+
+## 11/21/2026 (afternoon, 3:25 PM) - Sample invoices cleaned up for posting
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Gary plans a LinkedIn post and did not want the samples to resemble the real prospective client ("Municipal Gas Authority of Georgia", office in Kennesaw, GA). Web search: none of the sample vendor names or the old bill-to matched a real company. | - | - |
+| 2 | All six `samples\invoices-gas` PDFs: Bill To "Riverbend Municipal Gas Authority" changed to "Gary Hall LLC" (Gary's choice); footer now "Fictional vendor, items and amounts; not a real invoice."; "SAMPLE ONLY" under INVOICE in the header. GAS_04: vendor "Kennesaw Ridge Utility Locating LLC" changed to "Oconee Ridge Utility Locating LLC", invoice number KRL-2026-1107 to ORL-2026-1107, file renamed `GAS_04_missing_date_oconee_ridge_locating.pdf`. Layout, lines, totals and the planted mistakes unchanged. | repository | Written and checked (sizes match, text checked). |
+| 3 | `db\data\DLA_18_RENAME_SAMPLE_VENDOR.sql` (new): renames the vendor in DLA_VENDORS, keeping VENDOR_ID. `DLA_10_GAS_VENDORS.sql` updated to the new name for rebuilds. | repository | Waiting for Gary to run DLA_18 on DEV. |
+
 ## 11/21/2026 (afternoon, 3:15 PM) - Local-model run, quiet live updates, Refresh buttons removed
 
 | Step | What | Where | Result |

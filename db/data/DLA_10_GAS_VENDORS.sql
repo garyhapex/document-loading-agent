@@ -15,6 +15,10 @@
    Re-runnable : yes
    Author      : Claude for Gary D. Hall
    Date        : 11/19/2026
+   Changed     : 11/21/2026 - Kennesaw Ridge renamed to Oconee Ridge
+                 (Kennesaw is where a real prospective client has
+                 its office; the samples must not point at it).
+                 Existing databases: run DLA_18_RENAME_SAMPLE_VENDOR.sql.
    ============================================================ */
 
 SET DEFINE OFF
@@ -35,7 +39,7 @@ FROM   (SELECT 'Magnolia Pipe & Polymer Supply Co.'  AS vendor_name FROM dual
         UNION ALL
         SELECT 'Pinecrest Odorant Services Inc.'     AS vendor_name FROM dual
         UNION ALL
-        SELECT 'Kennesaw Ridge Utility Locating LLC' AS vendor_name FROM dual) n
+        SELECT 'Oconee Ridge Utility Locating LLC'   AS vendor_name FROM dual) n
 WHERE  NOT EXISTS (SELECT 1
                    FROM   dla_vendors v
                    WHERE  v.vendor_name = n.vendor_name);
