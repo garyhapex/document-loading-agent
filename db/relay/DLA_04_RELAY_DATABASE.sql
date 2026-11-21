@@ -29,6 +29,13 @@
                  setting is added here with default OLLAMA if
                  missing; db\data\DLA_16_WATCH_MODEL.sql
                  changes it.
+                 11/21/2026: compare page. QUEUE_EXTRACTION takes
+                 P_PURPOSE (LOAD or COMPARE) and RECEIVE_RESULT
+                 skips staging, the decision and the document
+                 status for a COMPARE read, so page 4 can read a
+                 document with both models without touching the
+                 review queue. Needs the PURPOSE column from
+                 DLA_17_COMPARE_COLUMN.sql; run that first.
    Re-run note : Re-running keeps the token, the prompt and
                  WATCH_MODEL (they are only inserted when
                  missing). Re-run this whole file after any
@@ -106,9 +113,13 @@ COMMIT;
 CREATE OR REPLACE PACKAGE dla_relay_pkg AUTHID DEFINER AS
 
     /* Puts one document in the queue for the local model.
-       Returns the new EXTRACTION_ID. Does not commit. */
+       Returns the new EXTRACTION_ID. Does not commit.
+       P_PURPOSE (11/21/2026): LOAD = stage and decide when the
+       answer comes back (the normal path); COMPARE = keep the
+       answer for the compare page only. */
     FUNCTION queue_extraction (
-        p_document_id  IN NUMBER
+        p_document_id  IN NUMBER,
+        p_purpose      IN VARCHAR2 DEFAULT 'LOAD'
     ) RETURN NUMBER;
 
     /* Relay asks for work. Hands out one PENDING extraction at
@@ -196,15 +207,25 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
        Public  : QUEUE_EXTRACTION
        -------------------------------------------------------- */
     FUNCTION queue_extraction (
-        p_document_id  IN NUMBER
+        p_document_id  IN NUMBER,
+        p_purpose      IN VARCHAR2 DEFAULT 'LOAD'
     ) RETURN NUMBER IS
         l_model_code     dla_extractions.model_code%TYPE;
         l_model_name     dla_extractions.model_name%TYPE;
+        l_purpose        dla_extractions.purpose%TYPE;
         l_count          NUMBER;
         l_extraction_id  dla_extractions.extraction_id%TYPE;
     BEGIN
         l_model_code := dla_pkg.c_model_ollama;
         l_model_name := dla_pkg.get_setting('OLLAMA_MODEL');
+        l_purpose    := UPPER(TRIM(NVL(p_purpose, 'LOAD')));
+
+        IF l_purpose NOT IN ('LOAD', 'COMPARE') THEN
+            RAISE_APPLICATION_ERROR(
+                -20020,
+                'DLA_RELAY_PKG.QUEUE_EXTRACTION: P_PURPOSE must be LOAD or COMPARE, not ' || p_purpose || '.'
+            );
+        END IF;
 
         SELECT COUNT(*)
         INTO   l_count
@@ -222,18 +243,21 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
             document_id,
             model_code,
             model_name,
-            status
+            status,
+            purpose
         ) VALUES (
             p_document_id,
             l_model_code,
             l_model_name,
-            'PENDING'
+            'PENDING',
+            l_purpose
         )
         RETURNING extraction_id INTO l_extraction_id;
 
         dla_pkg.log_audit(
             p_action      => 'EXTRACTION_QUEUED',
-            p_details     => 'Extraction ' || l_extraction_id || ' queued for ' || l_model_name || '.',
+            p_details     => 'Extraction ' || l_extraction_id || ' queued for ' || l_model_name
+                             || CASE WHEN l_purpose = 'COMPARE' THEN ' (compare only)' END || '.',
             p_document_id => p_document_id
         );
 
@@ -383,6 +407,7 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
         l_count        NUMBER;
         l_is_json      NUMBER := 0;
         l_document_id  dla_extractions.document_id%TYPE;
+        l_purpose      dla_extractions.purpose%TYPE;
         l_stg_header   NUMBER;
         l_invoice_id   NUMBER;
         l_flag_count   NUMBER;
@@ -434,6 +459,11 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
             RETURN;
         END IF;
 
+        SELECT e.purpose
+        INTO   l_purpose
+        FROM   dla_extractions e
+        WHERE  e.extraction_id = p_extraction_id;
+
         IF l_status = 'SUCCESS' AND l_raw IS NOT NULL THEN
             SELECT CASE WHEN l_raw IS JSON THEN 1 ELSE 0 END
             INTO   l_is_json
@@ -450,15 +480,24 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
             WHERE  e.extraction_id  = p_extraction_id
             RETURNING e.document_id INTO l_document_id;
 
+            dla_pkg.log_audit(
+                p_action      => 'EXTRACTION_SUCCESS',
+                p_details     => 'Extraction ' || p_extraction_id || ' answered in ' || l_elapsed || ' ms'
+                                 || CASE WHEN l_purpose = 'COMPARE' THEN ' (compare only, not staged)' END || '.',
+                p_document_id => l_document_id
+            );
+
+            /* A COMPARE read stops here: the answer is kept for
+               page 4; the document and the review queue are left
+               as they were. */
+            IF l_purpose = 'COMPARE' THEN
+                p_result_message := 'Compare result stored.';
+                RETURN;
+            END IF;
+
             UPDATE dla_documents d
             SET    d.status      = 'EXTRACTED'
             WHERE  d.document_id = l_document_id;
-
-            dla_pkg.log_audit(
-                p_action      => 'EXTRACTION_SUCCESS',
-                p_details     => 'Extraction ' || p_extraction_id || ' answered in ' || l_elapsed || ' ms.',
-                p_document_id => l_document_id
-            );
 
             /* Stage the answer. A staging failure must not lose
                the answer, so it is undone back to this point and
@@ -513,9 +552,11 @@ CREATE OR REPLACE PACKAGE BODY dla_relay_pkg AS
             WHERE  e.extraction_id  = p_extraction_id
             RETURNING e.document_id INTO l_document_id;
 
-            UPDATE dla_documents d
-            SET    d.status      = 'ERROR'
-            WHERE  d.document_id = l_document_id;
+            IF l_purpose = 'LOAD' THEN
+                UPDATE dla_documents d
+                SET    d.status      = 'ERROR'
+                WHERE  d.document_id = l_document_id;
+            END IF;
 
             dla_pkg.log_audit(
                 p_action      => 'EXTRACTION_ERROR',

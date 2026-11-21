@@ -14,6 +14,14 @@
                  come from DLA_13_OCI_MODEL.sql.
                  READ_WAITING_DOCUMENTS added for the APEX
                  automation (watched folder -> OCI).
+   11/21/2026  : Compare page support. EXTRACT_DOCUMENT takes
+                 P_PURPOSE (LOAD or COMPARE); a COMPARE read is
+                 stored and shown but never staged or loaded.
+                 COMPARE_DOCUMENT added: one call reads a
+                 document with OCI now and queues it for the
+                 local model, both marked COMPARE.
+                 Needs the PURPOSE column from
+                 DLA_17_COMPARE_COLUMN.sql.
    Note        : SUBMIT_DOCUMENT calls DLA_RELAY_PKG. On a brand
                  new install, where DLA_04_RELAY_DATABASE.sql has
                  not been run yet, the body shows a compile error
@@ -81,11 +89,27 @@ CREATE OR REPLACE PACKAGE dla_pkg AUTHID DEFINER AS
        APEX session (the web credential), so it is called from the
        Upload page, not from ORDS. Returns the new EXTRACTION_ID.
        P_MODEL_CODE is accepted for symmetry; only OCI_GENAI is read
-       here. */
+       here. P_PURPOSE (11/21/2026): LOAD is the normal path above;
+       COMPARE stores the answer for the compare page only and
+       skips staging, the decision, and the document status. */
     FUNCTION extract_document (
         p_document_id  IN NUMBER,
-        p_model_code   IN VARCHAR2 DEFAULT NULL
+        p_model_code   IN VARCHAR2 DEFAULT NULL,
+        p_purpose      IN VARCHAR2 DEFAULT 'LOAD'
     ) RETURN NUMBER;
+
+    /* Working (11/21/2026): the compare page (page 4). For one
+       document that is already in DLA_DOCUMENTS, reads it with
+       OCI Generative AI right now and puts it in the relay queue
+       for the local model, both reads marked COMPARE so neither
+       one is staged or loaded. The page shows the two answers
+       side by side once the relay has posted its result (about
+       6 seconds on the desktop, plus up to 5 seconds of polling).
+       Returns a one-line message for the page. Does not commit.
+       Needs an APEX session (the OCI call). */
+    FUNCTION compare_document (
+        p_document_id  IN NUMBER
+    ) RETURN VARCHAR2;
 
     /* Working (11/20/2026): called by the APEX automation
        "Read waiting documents" every minute. Finds documents that
@@ -474,8 +498,10 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
        -------------------------------------------------------- */
     FUNCTION extract_document (
         p_document_id  IN NUMBER,
-        p_model_code   IN VARCHAR2 DEFAULT NULL
+        p_model_code   IN VARCHAR2 DEFAULT NULL,
+        p_purpose      IN VARCHAR2 DEFAULT 'LOAD'
     ) RETURN NUMBER IS
+        l_purpose        dla_extractions.purpose%TYPE;
         l_model          dla_settings.setting_value%TYPE;
         l_endpoint       dla_settings.setting_value%TYPE;
         l_credential     dla_settings.setting_value%TYPE;
@@ -520,6 +546,14 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
             );
         END IF;
 
+        l_purpose := UPPER(TRIM(NVL(p_purpose, 'LOAD')));
+        IF l_purpose NOT IN ('LOAD', 'COMPARE') THEN
+            RAISE_APPLICATION_ERROR(
+                -20099,
+                'DLA_PKG.EXTRACT_DOCUMENT: P_PURPOSE must be LOAD or COMPARE, not ' || p_purpose || '.'
+            );
+        END IF;
+
         BEGIN
             SELECT d.file_name,
                    LOWER(d.mime_type),
@@ -550,12 +584,14 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
             document_id,
             model_code,
             model_name,
-            status
+            status,
+            purpose
         ) VALUES (
             p_document_id,
             c_model_oci,
             l_model,
-            'RUNNING'
+            'RUNNING',
+            l_purpose
         )
         RETURNING extraction_id INTO l_extraction_id;
 
@@ -677,40 +713,46 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
                    e.error_message  = NULL
             WHERE  e.extraction_id  = l_extraction_id;
 
-            UPDATE dla_documents d
-            SET    d.status      = 'EXTRACTED'
-            WHERE  d.document_id = p_document_id;
-
             log_audit(
                 p_action      => 'EXTRACTION_SUCCESS',
                 p_details     => 'Extraction ' || l_extraction_id || ' answered by ' || l_model
-                                 || ' in ' || l_elapsed_ms || ' ms.',
+                                 || ' in ' || l_elapsed_ms || ' ms'
+                                 || CASE WHEN l_purpose = 'COMPARE' THEN ' (compare only, not staged)' END || '.',
                 p_document_id => p_document_id
             );
 
-            /* Stage it, then let the agent decide. Same two steps,
-               same savepoints, as the relay path. */
-            SAVEPOINT before_staging;
-            BEGIN
-                l_stg_header := parse_extraction(l_extraction_id);
-            EXCEPTION
-                WHEN OTHERS THEN
-                    ROLLBACK TO before_staging;
-                    l_stg_header := NULL;
-            END;
+            /* A COMPARE read stops here: the answer is kept for
+               page 4, the document and the review queue are left
+               exactly as they were. */
+            IF l_purpose = 'LOAD' THEN
+                UPDATE dla_documents d
+                SET    d.status      = 'EXTRACTED'
+                WHERE  d.document_id = p_document_id;
 
-            IF l_stg_header IS NOT NULL THEN
-                SAVEPOINT before_decision;
+                /* Stage it, then let the agent decide. Same two steps,
+                   same savepoints, as the relay path. */
+                SAVEPOINT before_staging;
                 BEGIN
-                    process_staging(
-                        p_stg_header_id => l_stg_header,
-                        p_invoice_id    => l_invoice_id,
-                        p_flag_count    => l_flag_count
-                    );
+                    l_stg_header := parse_extraction(l_extraction_id);
                 EXCEPTION
                     WHEN OTHERS THEN
-                        ROLLBACK TO before_decision;
+                        ROLLBACK TO before_staging;
+                        l_stg_header := NULL;
                 END;
+
+                IF l_stg_header IS NOT NULL THEN
+                    SAVEPOINT before_decision;
+                    BEGIN
+                        process_staging(
+                            p_stg_header_id => l_stg_header,
+                            p_invoice_id    => l_invoice_id,
+                            p_flag_count    => l_flag_count
+                        );
+                    EXCEPTION
+                        WHEN OTHERS THEN
+                            ROLLBACK TO before_decision;
+                    END;
+                END IF;
             END IF;
         ELSE
             UPDATE dla_extractions e
@@ -720,9 +762,11 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
                    e.error_message  = SUBSTR(l_error, 1, 4000)
             WHERE  e.extraction_id  = l_extraction_id;
 
-            UPDATE dla_documents d
-            SET    d.status      = 'ERROR'
-            WHERE  d.document_id = p_document_id;
+            IF l_purpose = 'LOAD' THEN
+                UPDATE dla_documents d
+                SET    d.status      = 'ERROR'
+                WHERE  d.document_id = p_document_id;
+            END IF;
 
             log_audit(
                 p_action      => 'EXTRACTION_ERROR',
@@ -733,6 +777,72 @@ CREATE OR REPLACE PACKAGE BODY dla_pkg AS
 
         RETURN l_extraction_id;
     END extract_document;
+
+    /* --------------------------------------------------------
+       Public  : COMPARE_DOCUMENT   (page 4, "Read with both")
+       Purpose : One click on the compare page. The OCI read
+                 happens here and now (seconds); the local read
+                 is queued for the relay on Gary's desktop and
+                 lands a few seconds later. Both rows carry
+                 PURPOSE = COMPARE, so RECEIVE_RESULT and
+                 EXTRACT_DOCUMENT keep them out of staging.
+       Refuses : ORA-20098 if a COMPARE read for this document
+                 is still PENDING or RUNNING (press Refresh and
+                 wait instead of queueing it twice).
+       -------------------------------------------------------- */
+    FUNCTION compare_document (
+        p_document_id  IN NUMBER
+    ) RETURN VARCHAR2 IS
+        l_count          NUMBER;
+        l_oci_id         NUMBER;
+        l_local_id       NUMBER;
+        l_oci_status     dla_extractions.status%TYPE;
+        l_oci_ms         dla_extractions.elapsed_ms%TYPE;
+    BEGIN
+        SELECT COUNT(*)
+        INTO   l_count
+        FROM   dla_extractions e
+        WHERE  e.document_id = p_document_id
+        AND    e.purpose     = 'COMPARE'
+        AND    e.status      IN ('PENDING', 'RUNNING');
+
+        IF l_count > 0 THEN
+            RAISE_APPLICATION_ERROR(
+                -20098,
+                'A compare read of this document is still running. Click Refresh and wait for it.'
+            );
+        END IF;
+
+        l_local_id := dla_relay_pkg.queue_extraction(
+                          p_document_id => p_document_id,
+                          p_purpose     => 'COMPARE');
+
+        l_oci_id   := extract_document(
+                          p_document_id => p_document_id,
+                          p_model_code  => c_model_oci,
+                          p_purpose     => 'COMPARE');
+
+        SELECT e.status,
+               e.elapsed_ms
+        INTO   l_oci_status,
+               l_oci_ms
+        FROM   dla_extractions e
+        WHERE  e.extraction_id = l_oci_id;
+
+        log_audit(
+            p_action      => 'COMPARE_REQUESTED',
+            p_details     => 'Compare: OCI read ' || l_oci_id || ' (' || l_oci_status || ', '
+                             || l_oci_ms || ' ms), local read ' || l_local_id || ' queued.',
+            p_document_id => p_document_id
+        );
+
+        IF l_oci_status = 'SUCCESS' THEN
+            RETURN 'OCI answered in ' || ROUND(l_oci_ms / 1000, 1)
+                   || ' s. The local model is reading now; click Refresh in a few seconds.';
+        ELSE
+            RETURN 'OCI read failed (see the red row). The local model is reading now; click Refresh in a few seconds.';
+        END IF;
+    END compare_document;
 
     /* --------------------------------------------------------
        Public  : READ_WAITING_DOCUMENTS   (the automation's work)

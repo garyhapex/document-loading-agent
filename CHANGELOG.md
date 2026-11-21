@@ -2,6 +2,17 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/21/2026 (afternoon) - Phase 4: The compare page (page 4), built and tested
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | `db/tables/DLA_17_COMPARE_COLUMN.sql`: adds PURPOSE (LOAD or COMPARE) to DLA_EXTRACTIONS so a compare read is never staged or loaded. | DEV, as WKSP_WKSPPRDWORKSPACE | Done. 4 existing reads marked LOAD. |
+| 2 | `db/relay/DLA_04_RELAY_DATABASE.sql`: QUEUE_EXTRACTION takes P_PURPOSE; RECEIVE_RESULT skips staging, the decision and the document status for a COMPARE read. | DEV, as WKSP_WKSPPRDWORKSPACE | Compiled, no errors. Token, prompt, WATCH_MODEL and the 3 endpoints kept. |
+| 3 | `db/packages/DLA_02_PACKAGE.sql`: EXTRACT_DOCUMENT takes P_PURPOSE (same rule); new COMPARE_DOCUMENT reads a document with OCI now and queues it for the local model, both marked COMPARE; refuses while a compare read is still running (ORA-20098). | DEV, ADMIN | Compiled, no errors. |
+| 4 | Page 4 "Compare Models" built by Claude in Page Designer: navigation entry with icon fa-columns; select list P4_DOCUMENT_ID (submits on change); buttons "Read with both models" (process calls DLA_PKG.COMPARE_DOCUMENT, success message from P4_MESSAGE) and "Refresh"; region "Invoice" (iframe fed by Ajax callback SHOW_DOCUMENT, as on page 3); region "Side by side" with classic reports "What each model read" (latest read per model from DLA_EXTRACTIONS, JSON_TABLE, one row per field, Agree? column Same/Different, blank until both reads are SUCCESS), "Lines: local model" and "Lines: OCI Generative AI". Regions show only when an invoice is picked. | DEV, Page Designer | Saved. First saves failed with ORA-01401 until the pick list's "Display Null Value" was set to Y (not YES). Classic report queries carry no ORDER BY (default sort on the first column) because sortable columns and ORDER BY cannot mix. |
+| 5 | Tested on document 62 (GAS_03): Read with both models. | DEV + relay on the new PC | **Passed.** OCI 6.4 s then 4.4 s; local model 12 s (first call after idle reloads the model onto the card). All 11 fields and 3 lines "Same". Green message shows. Nothing staged: review queue unchanged. |
+| 6 | Session format: Gary renamed the first section marker from WHAT AND WHY to EXPLANATION. Format standard updated. | - | Done. |
+
 ## 11/21/2026 - New desktop set up and proven (no code changes)
 
 | Step | What | Where | Result |
