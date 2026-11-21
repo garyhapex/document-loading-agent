@@ -2,6 +2,14 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/21/2026 (afternoon, later) - Phase 4: Dashboard, demo script, first application export
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | `apex/f300.sql`: first export of application 300 (App Builder → Export / Import → Export, format SQL, Standard). Gary moved the download into `apex\`. Rule 21 added to the format standard: every commit that touches the application includes a fresh export. | DEV + repository | Done, 221 KB. |
+| 2 | Page 1 Home turned into the dashboard (Claude, Page Designer): hero text "The model reads. The database decides. A person approves only what was stopped."; badge list "What the agent has done" (invoices received, loaded by the agent, loaded after review, waiting, rejected, read errors; one query, one badge per column, Badge List template, 3-column grid); badge list "Seconds per read" (average per reader over successful reads); classic report "Latest documents" (file, received, from, read by, seconds, what happened). All from existing tables; no scripts. | DEV, Page Designer | Saved and checked in the running app: 4 received, 2 loaded by the agent, 2 waiting; local 16.5 s over 5 reads (includes the 55 s first load), OCI 5.8 s over 3. Lesson: the Badge List template makes one badge per column (heading = label, value = cell), so the query is one row with one column per number. |
+| 3 | `docs/DLA_DEMO_SCRIPT.md`: the 3-minute demo (Home → drop six PDFs in the inbox → Upload Invoice fills by itself → Home → Review GAS_03 → Compare GAS_03 → close), with a 5-step setup the day before and what to do if a row stays at Waiting. | repository | Written. Not yet rehearsed end to end. |
+
 ## 11/21/2026 (afternoon) - Phase 4: The compare page (page 4), built and tested
 
 | Step | What | Where | Result |

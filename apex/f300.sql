@@ -33,14 +33,14 @@ prompt APPLICATION 300 - Document Loading Agent
 -- Application Export:
 --   Application:     300
 --   Name:            Document Loading Agent
---   Date and Time:   19:32 Saturday November 21, 2026
+--   Date and Time:   19:41 Saturday November 21, 2026
 --   Exported By:     GHALL
 --   Flashback:       0
 --   Export Type:     Application Export
 --     Pages:                      6
 --       Items:                   19
 --       Processes:               12
---       Regions:                 19
+--       Regions:                 22
 --       Buttons:                  9
 --     Shared Components:
 --       Logic:
@@ -105,12 +105,12 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'Document Loading Agent'
 ,p_created_on=>wwv_flow_imp.dz('20261120012444Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121192142Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121193939Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 ,p_file_prefix=>nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>2461365012448
-,p_version_scn=>'51224753415157'
+,p_version_scn=>'51224754668445'
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -1313,7 +1313,7 @@ wwv_flow_imp_page.create_page(
 ,p_protection_level=>'C'
 ,p_page_component_map=>'13'
 ,p_created_on=>wwv_flow_imp.dz('20261120012448Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261120012448Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121193939Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 );
@@ -1321,20 +1321,360 @@ wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(63234247897513522)
 ,p_plug_name=>'Document Loading Agent'
 ,p_static_id=>'document-loading-agent'
+,p_icon_css_classes=>'fa-file-text-o'
 ,p_region_template_options=>'#DEFAULT#'
-,p_escape_on_http_output=>'Y'
 ,p_plug_template=>2675494171183407654
 ,p_plug_display_sequence=>10
 ,p_plug_display_point=>'REGION_POSITION_01'
 ,p_plug_item_display_point=>'ABOVE'
+,p_location=>null
+,p_plug_source=>'<p>The model reads. The database decides. A person approves only what was stopped.</p>'
 ,p_plug_query_num_rows=>15
 ,p_region_image=>'#APP_FILES#icons/app-icon-512.png'
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
   'expand_shortcuts', 'N',
   'output_as', 'HTML')).to_clob
 ,p_created_on=>wwv_flow_imp.dz('20261120012448Z')
-,p_updated_on=>wwv_flow_imp.dz('20261120012448Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121193838Z')
 ,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_region(
+ p_id=>wwv_flow_imp.id(63523231959706809)
+,p_name=>'Latest documents'
+,p_static_id=>'latest-documents'
+,p_template=>4073835273271169698
+,p_display_sequence=>40
+,p_icon_css_classes=>'fa-list'
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
+,p_component_template_options=>'#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight:t-Report--stretch:t-Report--hideNoPagination'
+,p_new_grid_row=>false
+,p_grid_column_span=>8
+,p_source_type=>'NATIVE_SQL_REPORT'
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/* Page 1 Home: the last documents and what happened to each. Read-only. */',
+'SELECT d.document_id,',
+'       d.file_name,',
+'       d.uploaded_on,',
+'       d.uploaded_by,',
+'       (SELECT CASE e.model_code WHEN ''OLLAMA'' THEN ''Local'' ELSE ''OCI'' END',
+'        FROM   dla_extractions e',
+'        WHERE  e.extraction_id = (SELECT MAX(x.extraction_id) FROM dla_extractions x WHERE x.document_id = d.document_id)) AS read_by,',
+'       (SELECT ROUND(e.elapsed_ms / 1000, 1)',
+'        FROM   dla_extractions e',
+'        WHERE  e.extraction_id = (SELECT MAX(x.extraction_id) FROM dla_extractions x WHERE x.document_id = d.document_id)) AS seconds,',
+'       CASE',
+'         WHEN EXISTS (SELECT 1 FROM dla_invoices i, dla_stg_headers h WHERE i.stg_header_id = h.stg_header_id AND h.document_id = d.document_id AND h.reviewed_by = ''AGENT'')',
+'              THEN ''Loaded by the agent''',
+'         WHEN EXISTS (SELECT 1 FROM dla_invoices i WHERE i.document_id = d.document_id)',
+'              THEN ''Loaded after review''',
+'         WHEN EXISTS (SELECT 1 FROM dla_stg_headers h WHERE h.document_id = d.document_id AND h.review_status = ''PENDING'')',
+'              THEN ''Waiting for a person''',
+'         WHEN EXISTS (SELECT 1 FROM dla_stg_headers h WHERE h.document_id = d.document_id AND h.review_status = ''REJECTED'')',
+'              THEN ''Rejected''',
+'         WHEN d.status = ''ERROR'' THEN ''Read failed''',
+'         WHEN EXISTS (SELECT 1 FROM dla_extractions e WHERE e.document_id = d.document_id AND e.status IN (''PENDING'', ''RUNNING''))',
+'              THEN ''Being read''',
+'         ELSE INITCAP(REPLACE(d.status, ''_'', '' ''))',
+'       END AS outcome',
+'FROM   dla_documents d'))
+,p_ajax_enabled=>'Y'
+,p_lazy_loading=>false
+,p_query_row_template=>2540130677583398057
+,p_query_num_rows=>10
+,p_query_options=>'DERIVED_REPORT_COLUMNS'
+,p_query_no_data_found=>'No documents yet. Drop one on the Upload Invoice page or into C:\DLA\inbox.'
+,p_query_num_rows_type=>'NEXT_PREVIOUS_LINKS'
+,p_pagination_display_position=>'BOTTOM_RIGHT'
+,p_csv_output=>'N'
+,p_prn_output=>'N'
+,p_sort_null=>'L'
+,p_plug_query_strip_html=>'N'
+,p_created_on=>wwv_flow_imp.dz('20261121193838Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121193939Z')
+,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63523355193706810)
+,p_query_column_id=>1
+,p_column_alias=>'DOCUMENT_ID'
+,p_column_display_sequence=>10
+,p_column_heading=>'Doc'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_default_sort_column_sequence=>1
+,p_default_sort_dir=>'desc'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193838Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63523431570706811)
+,p_query_column_id=>2
+,p_column_alias=>'FILE_NAME'
+,p_column_display_sequence=>20
+,p_column_heading=>'File'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193838Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63523966105706816)
+,p_query_column_id=>7
+,p_column_alias=>'OUTCOME'
+,p_column_display_sequence=>70
+,p_column_heading=>'What happened'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193838Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63523759020706814)
+,p_query_column_id=>5
+,p_column_alias=>'READ_BY'
+,p_column_display_sequence=>50
+,p_column_heading=>'Read by'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193838Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63523803254706815)
+,p_query_column_id=>6
+,p_column_alias=>'SECONDS'
+,p_column_display_sequence=>60
+,p_column_heading=>'Seconds'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193838Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63523699025706813)
+,p_query_column_id=>4
+,p_column_alias=>'UPLOADED_BY'
+,p_column_display_sequence=>40
+,p_column_heading=>'From'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193838Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63523580047706812)
+,p_query_column_id=>3
+,p_column_alias=>'UPLOADED_ON'
+,p_column_display_sequence=>30
+,p_column_heading=>'Received'
+,p_column_format=>'MM/DD/YYYY HH24:MI'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193838Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_region(
+ p_id=>wwv_flow_imp.id(63522935641706806)
+,p_name=>'Seconds per read'
+,p_static_id=>'seconds-per-read'
+,p_template=>4073835273271169698
+,p_display_sequence=>30
+,p_icon_css_classes=>'fa-clock-o'
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
+,p_component_template_options=>'#DEFAULT#:u-colors:t-BadgeList--medium:t-BadgeList--stacked:t-BadgeList--fixed:t-Report--hideNoPagination'
+,p_grid_column_span=>4
+,p_source_type=>'NATIVE_SQL_REPORT'
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/* Page 1 Home: average seconds per successful read, by reader. One row, one badge per column. Read-only. */',
+'SELECT (SELECT ROUND(AVG(e.elapsed_ms) / 1000, 1) || '' s over '' || COUNT(*) || '' reads''',
+'        FROM dla_extractions e WHERE e.status = ''SUCCESS'' AND e.model_code = ''OLLAMA'') AS local_model,',
+'       (SELECT ROUND(AVG(e.elapsed_ms) / 1000, 1) || '' s over '' || COUNT(*) || '' reads''',
+'        FROM dla_extractions e WHERE e.status = ''SUCCESS'' AND e.model_code = ''OCI_GENAI'') AS oci_generative_ai',
+'FROM   dual'))
+,p_ajax_enabled=>'Y'
+,p_lazy_loading=>false
+,p_query_row_template=>2106120299521025145
+,p_query_num_rows=>1
+,p_query_options=>'DERIVED_REPORT_COLUMNS'
+,p_query_no_data_found=>'No reads yet.'
+,p_query_num_rows_type=>'NEXT_PREVIOUS_LINKS'
+,p_pagination_display_position=>'BOTTOM_RIGHT'
+,p_csv_output=>'N'
+,p_prn_output=>'N'
+,p_sort_null=>'L'
+,p_plug_query_strip_html=>'N'
+,p_created_on=>wwv_flow_imp.dz('20261121193838Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121193939Z')
+,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63524685518706823)
+,p_query_column_id=>1
+,p_column_alias=>'LOCAL_MODEL'
+,p_column_display_sequence=>10
+,p_column_heading=>'Local model (qwen2.5vl:7b)'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193918Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63524725716706824)
+,p_query_column_id=>2
+,p_column_alias=>'OCI_GENERATIVE_AI'
+,p_column_display_sequence=>20
+,p_column_heading=>'OCI Generative AI (Gemini 2.5 Flash)'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193918Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_region(
+ p_id=>wwv_flow_imp.id(63522567227706802)
+,p_name=>'What the agent has done'
+,p_static_id=>'what-the-agent-has-done'
+,p_template=>4073835273271169698
+,p_display_sequence=>20
+,p_icon_css_classes=>'fa-check-square-o'
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
+,p_component_template_options=>'#DEFAULT#:u-colors:t-BadgeList--large:t-BadgeList--cols t-BadgeList--3cols:t-BadgeList--fixed:t-Report--hideNoPagination'
+,p_source_type=>'NATIVE_SQL_REPORT'
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'/* Page 1 Home: what the agent has done. One row, one badge per column. Read-only. */',
+'SELECT (SELECT COUNT(*) FROM dla_documents d) AS received,',
+'       (SELECT COUNT(*) FROM dla_invoices i, dla_stg_headers h',
+'        WHERE h.stg_header_id = i.stg_header_id AND h.reviewed_by = ''AGENT'') AS loaded_by_agent,',
+'       (SELECT COUNT(*) FROM dla_invoices i, dla_stg_headers h',
+'        WHERE h.stg_header_id = i.stg_header_id AND NVL(h.reviewed_by, ''AGENT'') <> ''AGENT'') AS loaded_after_review,',
+'       (SELECT COUNT(*) FROM dla_stg_headers h WHERE h.review_status = ''PENDING'') AS waiting,',
+'       (SELECT COUNT(*) FROM dla_stg_headers h WHERE h.review_status = ''REJECTED'') AS rejected,',
+'       (SELECT COUNT(*) FROM dla_extractions e WHERE e.status = ''ERROR'') AS read_errors',
+'FROM   dual'))
+,p_ajax_enabled=>'Y'
+,p_lazy_loading=>false
+,p_query_row_template=>2106120299521025145
+,p_query_num_rows=>1
+,p_query_options=>'DERIVED_REPORT_COLUMNS'
+,p_query_no_data_found=>'Nothing yet.'
+,p_query_num_rows_type=>'ROWS_X_TO_Y'
+,p_pagination_display_position=>'BOTTOM_RIGHT'
+,p_csv_output=>'N'
+,p_prn_output=>'N'
+,p_sort_null=>'L'
+,p_plug_query_strip_html=>'N'
+,p_created_on=>wwv_flow_imp.dz('20261121193837Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121193939Z')
+,p_created_by=>'GHALL'
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63524238648706819)
+,p_query_column_id=>3
+,p_column_alias=>'LOADED_AFTER_REVIEW'
+,p_column_display_sequence=>30
+,p_column_heading=>'Loaded after a person reviewed'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193918Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63524160139706818)
+,p_query_column_id=>2
+,p_column_alias=>'LOADED_BY_AGENT'
+,p_column_display_sequence=>20
+,p_column_heading=>'Loaded by the agent, no person'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193918Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63524593293706822)
+,p_query_column_id=>6
+,p_column_alias=>'READ_ERRORS'
+,p_column_display_sequence=>60
+,p_column_heading=>'Reads that failed'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193918Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63524084792706817)
+,p_query_column_id=>1
+,p_column_alias=>'RECEIVED'
+,p_column_display_sequence=>10
+,p_column_heading=>'Invoices received'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193918Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63524473010706821)
+,p_query_column_id=>5
+,p_column_alias=>'REJECTED'
+,p_column_display_sequence=>50
+,p_column_heading=>'Rejected by a person'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193918Z')
+,p_updated_by=>'GHALL'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(63524325263706820)
+,p_query_column_id=>4
+,p_column_alias=>'WAITING'
+,p_column_display_sequence=>40
+,p_column_heading=>'Waiting for a person'
+,p_column_alignment=>'RIGHT'
+,p_heading_alignment=>'RIGHT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+,p_updated_on=>wwv_flow_imp.dz('20261121193918Z')
 ,p_updated_by=>'GHALL'
 );
 end;
