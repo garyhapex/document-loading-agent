@@ -2,6 +2,19 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/21/2026 (afternoon, 2:30 PM) - Reset, local-model test, status badges on every page
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Reset with `DLA_15_RESET_DEMO_DATA.sql`, WATCH_MODEL = OLLAMA, all six gas PDFs copied into `C:\DLA\inbox` at once. | DEV + relay on the new PC | **Passed.** 6 received, 2 loaded by the agent (GAS_01, GAS_02), 4 waiting for a person; local model average 7.7 s per read. |
+| 2 | Gary: on page 2, "In review" and "SUCCESS" looked alike and said nothing about what to do. Claude drew solid badge mockups; Gary approved ("That works.") and asked for the same badges and colours throughout the application, where needed. | - | Approved. |
+| 3 | Page 0: static region "Status badge colours" (footer slot) holds the one CSS for every badge: `.dla-b` plus Loaded/Approved green #2E7D32, Needs review orange #E65100, Error red #C62828, Being read blue #1565C0, Rejected dark grey #424242; white text. | DEV, Page Designer | Saved. |
+| 4 | Page 2 Documents: "Status" column is a badge (Needs review → opens that invoice on Review Invoices; Loaded → opens it on Loaded Invoices). "Read" column says Read OK / Reading now / Waiting for the relay / Read failed. | DEV, Page Designer | Saved and checked: 4 orange, 2 green, links open the right invoice. Live refresh unchanged. |
+| 5 | Page 1 Home "Latest documents": "What happened" is a badge in the same colours and still a link. Card left edges changed to the same three colours. | DEV, Page Designer | Saved and checked. |
+| 6 | Page 3 "Problems found": Severity is a badge (Error red, anything else orange). Query given a header block. | DEV, Page Designer | Saved and checked on GAS_03 (red Error). |
+| 7 | Page 4 "What each model read": Agree? is a badge (Same green, Different red, blank stays blank); the Read status row says Read OK / Read failed instead of SUCCESS / ERROR. Old dla-agree CSS removed from page 4. | DEV, Page Designer | Saved and checked on GAS_02 (Read OK; Agree blank until OCI reads it). |
+| 8 | Page 5 left as is: every row there is already loaded, so there is no status to show. | - | - |
+
 ## 11/21/2026 (afternoon, last) - Dashboard redone as clickable cards; new Loaded Invoices page
 
 | Step | What | Where | Result |
