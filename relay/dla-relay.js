@@ -3,7 +3,11 @@
 // Document Loading Agent -- Invoice Relay
 //
 // Author  : Claude for Gary D. Hall
-// Version : 1.2.1 (11/21/2026)
+// Version : 1.2.2 (11/21/2026)
+//
+// 1.2.2 (11/21/2026): every read asks Ollama to keep the model loaded on the
+//   graphics card for 24 hours (keep_alive). Ollama's default is 5 minutes,
+//   after which the next invoice paid about 13 s to load the model again.
 //
 // 1.2.1 (11/21/2026): when the relay has just finished an invoice it asks for
 //   the next one right away instead of waiting the full 5 seconds. A batch of
@@ -113,7 +117,7 @@ const path    = require('path');
 const os      = require('os');
 const { execFile, execFileSync } = require('child_process');
 
-const RELAY_VERSION = '1.2.1';
+const RELAY_VERSION = '1.2.2';
 
 // ============================================================================
 // CONFIGURATION
@@ -161,6 +165,11 @@ const ORDS_TIMEOUT_MS = 60000;
 // graphics card this can be several minutes, more on the first invoice
 // after the PC starts (the model has to load).
 const OLLAMA_TIMEOUT_MS = 20 * 60 * 1000;
+
+// How long Ollama keeps the model loaded after a read (1.2.2). Ollama's own
+// default is 5 minutes; 24 hours means the first invoice after a quiet
+// spell reads as fast as the rest.
+const OLLAMA_KEEP_ALIVE = '24h';
 
 // PDF conversion. 150 dots per inch gives a letter page of about
 // 1275 x 1650 pixels: sharp enough to read small print, small enough for
@@ -379,6 +388,7 @@ function pdfToImages(buffer) {
 // THE MODEL
 // Sends one invoice image and the prompt to Ollama and returns the model's
 // answer text. format:"json" tells Ollama the answer must be JSON.
+// keep_alive (1.2.2) keeps the model on the card between invoices.
 // ============================================================================
 async function askModel(item, images) {
 
@@ -390,6 +400,7 @@ async function askModel(item, images) {
           stream:   false,
           format:   'json',
           options:  { temperature: 0 },
+          keep_alive: OLLAMA_KEEP_ALIVE,
           messages: [ { role: 'user', content: item.prompt, images: images } ] },
         OLLAMA_TIMEOUT_MS);
 
