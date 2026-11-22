@@ -33,7 +33,7 @@ prompt APPLICATION 300 - Document Loading Agent
 -- Application Export:
 --   Application:     300
 --   Name:            Document Loading Agent
---   Date and Time:   23:38 Saturday November 21, 2026
+--   Date and Time:   01:23 Sunday November 22, 2026
 --   Exported By:     GHALL
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -105,12 +105,12 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'Document Loading Agent'
 ,p_created_on=>wwv_flow_imp.dz('20261120012444Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121233703Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261122011503Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 ,p_file_prefix=>nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>2461366200330
-,p_version_scn=>'51226462810816'
+,p_version_scn=>'51227185015336'
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
@@ -1117,7 +1117,7 @@ wwv_flow_imp_page.create_page(
 ,p_protection_level=>'D'
 ,p_page_component_map=>'14'
 ,p_created_on=>wwv_flow_imp.dz('20261120012447Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121211138Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261121234720Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 );
@@ -1153,6 +1153,10 @@ wwv_flow_imp_page.create_page_plug(
 '.dla-live { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; font-size: 12px; font-weight: 600; color: #2E7D32; vertical-align: middle; }',
 '.dla-live i { width: 8px; height: 8px; border-radius: 50%; background: #2E7D32; animation: dla-pulse 1.6s ease-in-out infinite; }',
 '@keyframes dla-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }',
+'/* Read-time bar (11/21/2026): while a model is reading, page 2 shows a sliding bar in the Read time cell instead of a counting number; the seconds appear once the read is done. */',
+'.dla-bar { position: relative; height: 6px; margin: 6px 0; border-radius: 3px; background: #E0E0E0; overflow: hidden; }',
+'.dla-bar span { position: absolute; top: 0; left: -40%; width: 40%; height: 100%; border-radius: 3px; background: #E65100; animation: dla-bar-move 1.4s linear infinite; }',
+'@keyframes dla-bar-move { to { left: 100%; } }',
 '/* Live regions refresh quietly: no APEX loading spinner. */',
 '.dla-quiet .u-Processing, .dla-quiet .u-Processing-spinner { display: none !important; }',
 '</style>',
@@ -1261,7 +1265,7 @@ wwv_flow_imp_page.create_page_plug(
   'expand_shortcuts', 'N',
   'output_as', 'HTML')).to_clob
 ,p_created_on=>wwv_flow_imp.dz('20261121202057Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121211138Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121234720Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
@@ -1665,24 +1669,19 @@ wwv_flow_imp_page.create_page(
 '   database (Ajax callback LIVE_STATUS) whether any document',
 '   changed. Only when something changed is the Documents report',
 '   refreshed; the rows that changed flash and a short notice',
-'   appears. While a model is reading, its seconds count up every',
-'   second. dlaLive is defined once for the whole app on page 0. */',
+'   appears. While a model is reading, the Read time cell shows a sliding',
+'   bar (CSS on page 0); the seconds appear when the read is done. dlaLive is defined once for the whole app on page 0. */',
 'dlaLive.start({',
 '    regions : ["documents"],',
 '    marker  : "documents"',
 '});',
-'setInterval(function () {',
-'    document.querySelectorAll("#documents .fa-anim-spin").forEach(function (icon) {',
-'        var cell = icon.closest("tr").querySelector(''td[headers="SECONDS"]'');',
-'        if (cell) { cell.textContent = (parseInt(cell.textContent, 10) || 0) + 1; }',
-'    });',
-'}, 1000);'))
+''))
 ,p_step_template=>4073832297226169690
 ,p_page_template_options=>'#DEFAULT#'
 ,p_protection_level=>'C'
 ,p_page_component_map=>'03'
 ,p_created_on=>wwv_flow_imp.dz('20261120014804Z')
-,p_last_updated_on=>wwv_flow_imp.dz('20261121211204Z')
+,p_last_updated_on=>wwv_flow_imp.dz('20261122011503Z')
 ,p_created_by=>'GHALL'
 ,p_last_updated_by=>'GHALL'
 );
@@ -1722,8 +1721,8 @@ wwv_flow_imp_page.create_report_region(
 '   Purpose : One row per read of each uploaded document, newest',
 '             first. A document not yet read still shows.',
 '             READ_STATUS says in plain words where the read is.',
-'             SECONDS counts up live while the model is reading',
-'             and shows the final time once it is done.',
+'             SECONDS (11/21/2026): a sliding bar while the model',
+'             is reading, the seconds once the read is done.',
 '             STATUS_BADGE (11/21/2026): the document''s status as a',
 '             coloured badge, same colours on every page (CSS on',
 '             page 0); Needs review and Loaded are links.',
@@ -1775,9 +1774,9 @@ wwv_flow_imp_page.create_report_region(
 '           WHEN ''ERROR''   THEN ''fa-exclamation-triangle u-danger-text''',
 '       END                         AS status_icon,',
 '       CASE',
-'           WHEN e.status = ''RUNNING''',
-'           THEN ROUND((CAST(SYSTIMESTAMP AS DATE) - CAST(e.started_on AS DATE)) * 86400)',
-'           ELSE ROUND(e.elapsed_ms / 1000)',
+'           WHEN e.status = ''RUNNING'' THEN ''<div class="dla-bar" aria-label="Reading"><span></span></div>''',
+'           WHEN e.status = ''PENDING'' THEN ''<div class="dla-bar" aria-label="In the queue"></div>''',
+'           WHEN e.status IS NOT NULL THEN ROUND(e.elapsed_ms / 1000) || '' s''',
 '       END                         AS seconds,',
 '       e.error_message',
 'FROM   dla_documents   d,',
@@ -1798,7 +1797,7 @@ wwv_flow_imp_page.create_report_region(
 ,p_sort_null=>'L'
 ,p_plug_query_strip_html=>'N'
 ,p_created_on=>wwv_flow_imp.dz('20261120015119Z')
-,p_updated_on=>wwv_flow_imp.dz('20261121205451Z')
+,p_updated_on=>wwv_flow_imp.dz('20261122011503Z')
 ,p_created_by=>'GHALL'
 ,p_updated_by=>'GHALL'
 );
@@ -1883,12 +1882,13 @@ wwv_flow_imp_page.create_report_columns(
 ,p_query_column_id=>12
 ,p_column_alias=>'SECONDS'
 ,p_column_display_sequence=>80
-,p_column_heading=>'Seconds'
+,p_column_heading=>'Read time'
 ,p_column_alignment=>'RIGHT'
 ,p_heading_alignment=>'RIGHT'
+,p_display_as=>'WITHOUT_MODIFICATION'
 ,p_derived_column=>'N'
 ,p_include_in_export=>'Y'
-,p_updated_on=>wwv_flow_imp.dz('20261121202019Z')
+,p_updated_on=>wwv_flow_imp.dz('20261121234837Z')
 ,p_updated_by=>'GHALL'
 );
 wwv_flow_imp_page.create_report_columns(
@@ -4810,6 +4810,7 @@ wwv_flow_imp_page.create_page(
 ,p_step_template=>4073832297226169690
 ,p_page_template_options=>'#DEFAULT#'
 ,p_protection_level=>'C'
+,p_page_component_map=>'21'
 ,p_created_on=>wwv_flow_imp.dz('20261121224223Z')
 ,p_last_updated_on=>wwv_flow_imp.dz('20261121231928Z')
 ,p_created_by=>'GHALL'

@@ -3,7 +3,13 @@
 // Document Loading Agent -- Invoice Relay
 //
 // Author  : Claude for Gary D. Hall
-// Version : 1.2.0 (11/19/2026)
+// Version : 1.2.1 (11/21/2026)
+//
+// 1.2.1 (11/21/2026): when the relay has just finished an invoice it asks for
+//   the next one right away instead of waiting the full 5 seconds. A batch of
+//   six finishes about 25 seconds sooner, and the next invoice shows as
+//   "Reading now" on the Upload Invoice page without the dead gap Gary saw.
+//   The 5-second wait still applies when there was nothing to do.
 //
 // WHAT IT IS
 //   A small program that runs on the PC where Ollama is installed. It sits
@@ -15,7 +21,7 @@
 // HOW IT TALKS TO THE DATABASE -- THE RELAY REACHES OUT
 //   The relay only ever calls OUT, over HTTPS, to the ORDS address.
 //   Nothing calls IN: no listening port, no ngrok, no open door.
-//   Every 5 seconds it asks
+//   Every 5 seconds when idle (at once after finishing a job) it asks
 //     GET  {ORDS}/dla/relay/work
 //   If an invoice is waiting, it sends the image to Ollama on this PC
 //     POST http://127.0.0.1:11434/api/chat
@@ -107,7 +113,7 @@ const path    = require('path');
 const os      = require('os');
 const { execFile, execFileSync } = require('child_process');
 
-const RELAY_VERSION = '1.2.0';
+const RELAY_VERSION = '1.2.1';
 
 // ============================================================================
 // CONFIGURATION
@@ -618,9 +624,14 @@ async function lookInWatchFolder() {
 let busy = false;
 let consecutiveFailures = 0;
 
+// Delay before asking again right after a finished job (1.2.1). Short: just
+// enough to let the finally block below release the busy flag.
+const ASK_AGAIN_AFTER_WORK_MS = 250;
+
 async function askForWork() {
     if (busy) return;
     busy = true;
+    let hadWork = false;
 
     try {
         const resp = await httpRequest('GET', ordsUrl('/dla/relay/work'), ordsHeaders(), null, ORDS_TIMEOUT_MS);
@@ -641,6 +652,7 @@ async function askForWork() {
         }
 
         const items = Array.isArray(resp.json.work) ? resp.json.work : [];
+        hadWork = items.length > 0;
         for (const item of items) {
             log('WORK', 'Picked up extraction ' + item.extraction_id + ': ' + item.file_name +
                         ' -> ' + item.model + '. Reading; this can take several minutes.');
@@ -664,6 +676,9 @@ async function askForWork() {
         }
     } finally {
         busy = false;
+        // 1.2.1: a job was just done, so another may be queued behind it.
+        // Ask again now rather than at the next 5-second tick.
+        if (hadWork) { setTimeout(askForWork, ASK_AGAIN_AFTER_WORK_MS); }
     }
 }
 
@@ -705,7 +720,7 @@ function start() {
     // The token is a secret: only its length is shown.
     console.log(' Database : ' + SETTINGS.ordsBaseUrl);
     console.log(' Token    : set (' + SETTINGS.relayToken.length + ' characters)');
-    console.log(' Work     : asking every ' + (WORK_POLL_INTERVAL_MS / 1000) + ' s. Calls out only.');
+    console.log(' Work     : asking every ' + (WORK_POLL_INTERVAL_MS / 1000) + ' s when idle, at once after a job. Calls out only.');
     console.log(' Stop     : press Ctrl+C');
     console.log('============================================================');
 

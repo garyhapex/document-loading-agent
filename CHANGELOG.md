@@ -2,6 +2,19 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/21/2026 (evening, 5:55 PM) - Read time bar on Upload Invoice replaces the counting seconds
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Gary: the seconds counting up while a model reads never match the final number ("it says 15, but when it finally loads, it was actually less than 15"). Decision: show a sliding bar inside the row while reading, the seconds only when done. Mockup shown, Gary: "I love it." | chat | Approved. |
+| 2 | Page 0, region "Status badge colours": CSS `.dla-bar` (grey track, orange slider, `dla-bar-move` 1.4 s) added above the "Live regions refresh quietly" line. | DEV, Page Designer | Saved. |
+| 3 | Page 2, report "Documents": SECONDS now returns the bar HTML while RUNNING, nothing while PENDING, `ROUND(elapsed_ms/1000) || ' s'` once done; column heading "Read time", Escape Special Characters N. Page JavaScript: the 1-second `setInterval` count-up removed. Query 3,839 characters (under the ~4,000 save limit). | DEV, Page Designer | Saved, no errors. Checked in the app: finished rows show 6 s, 8 s, 13 s. The bar itself shows only during a live read (Gary to drop a PDF). |
+| 4 | Relay design notes updated for WATCH_MODEL, the two branches, the automation and the new PC (owed since 11/20). | project docs | Saved. |
+| 5 | Gary saw the bar but "there's some type of a delay" before it appears: a new row is PENDING for up to 5 s (relay poll) plus up to 3 s (page poll) before the read is RUNNING. Claude offered the moving bar for waiting rows too; Gary: "every one of them's going to have that thing scrolling across when nothing's actually happening." Middle option chosen after a mockup: a still grey track while waiting, the orange slider only while reading. Page 2 query: PENDING now returns the empty `dla-bar` track. First save was rejected ("Your session has ended", builder idle since 5:55 PM); builder reopened, change redone and saved (7:15 PM). | DEV, Page Designer | Saved, no errors. |
+| 6 | Second run (7:16 PM, 6 to 13 s each): Gary saw the grey track sit with no slider between invoices ("it was on the third one, but no slider at all"). Cause: the relay's `setInterval` asks for work every 5 s even right after finishing a job, plus up to 3 s page poll. `relay\dla-relay.js` 1.2.1: after a job it asks again after 250 ms (`hadWork` flag, `ASK_AGAIN_AFTER_WORK_MS`); the 5-second wait stays for idle. Written by Claude; Gary restarts the relay. | relay | Syntax checked with `node --check`. |
+| 7 | Relay 1.2.1 restarted by Gary; reset; six PDFs dropped again (7:22 PM). | DEV + relay | 3 to 6 s per invoice (model warm, no idle gap); slider moves row to row. Gary: "now we're getting accurate counts and accurate timing." |
+| 8 | Export due: pages 0 and 2 changed. | apex\f300.sql | Gary exports. |
+
 ## 11/21/2026 (evening, 5:40 PM) - Fresh data for the video; instruction format switched to Stick-IT's
 
 | Step | What | Where | Result |
