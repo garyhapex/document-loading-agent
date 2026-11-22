@@ -2,6 +2,16 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/22/2026 (afternoon, 4:49 to 5:30 PM) - LinkedIn video quality, Rule 23, SSO discussion
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Gary: his posted video looks fuzzy next to everyone else's. Checked: LinkedIn plays it at 1334x720; the uploaded `DLA_demo_captioned.mp4` was about 135 kbps at 1920x1036 (Claude's encoding, Claude's mistake). Recommended for screen recordings: 1920x1080, 30 fps, 8 to 12 Mbps. | LinkedIn, files | Cause found. |
+| 2 | Claude made `C:\Users\garyh\Videos\DLA_demo_linkedin.mp4` from the raw Snagit file: crop toolbar, pad to 1920x1080, 30 fps, H.264 High, 10 Mbps CBR, same captions (181,146,745 bytes, size matched on the PC). Gary had only asked why, not for a new file. | Videos folder | Exists; not posted. LinkedIn cannot swap a posted video; Gary keeps the current post. |
+| 3 | Rule 23 "Right the first time" added to `claude/DLA_Response_Format_Standard.md` (plus Rule 11 "a why question gets the answer, not a build", Rule 13 monitor check, Rule 14 never navigate a tab Gary is typing in). | project docs | Saved. |
+| 4 | SSO for APEX discussed and checked (Entra ID via Social Sign-In; Azure free account route; card/phone verification; P1 for group roles). Gary decided not to learn it now. | chat | No build. |
+| 5 | Handoff updated (`docs\DLA_SESSION_HANDOFF.md` and the project copy). | repo, project | Saved. |
+
 ## 11/21/2026 (evening, 5:55 PM) - Read time bar on Upload Invoice replaces the counting seconds
 
 | Step | What | Where | Result |
