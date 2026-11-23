@@ -16,8 +16,8 @@
    Author      : Claude for Gary D. Hall
    Date        : 11/19/2026
    Changed     : 11/21/2026 - Kennesaw Ridge renamed to Oconee Ridge
-                 (Kennesaw is where a real prospective client has
-                 its office; the samples must not point at it).
+                 (a sample vendor name is changed so the samples
+                 stay fully fictional).
                  Existing databases: run DLA_18_RENAME_SAMPLE_VENDOR.sql.
    ============================================================ */
 

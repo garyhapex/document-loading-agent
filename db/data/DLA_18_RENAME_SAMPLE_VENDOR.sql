@@ -5,9 +5,8 @@
    Changes     : YES - renames one fictional vendor in DLA_VENDORS.
    Purpose     : The sample vendor "Kennesaw Ridge Utility Locating
                  LLC" is renamed "Oconee Ridge Utility Locating LLC",
-                 to match the new GAS_04 sample invoice. Kennesaw is
-                 where a real prospective client has its office, and
-                 the samples must not point at it. The vendor keeps
+                 to match the new GAS_04 sample invoice. The rename
+                 keeps the samples fully fictional. The vendor keeps
                  its VENDOR_ID, so nothing else changes.
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : WKSP_WKSPPRDWORKSPACE or ADMIN, SQL Developer,
