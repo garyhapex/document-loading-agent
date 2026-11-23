@@ -2,6 +2,17 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
+## 11/22/2026 (evening, 5:40 to 5:55 PM) - Repository moved out of OneDrive, two old test scripts removed
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Found 87 of 273 Git history files unreadable in the OneDrive copy (`C:\Users\garyh\OneDrive\Documents\GitHub\document-loading-agent`). Cause: a Git repository inside OneDrive. | old folder | Old folder left untouched. |
+| 2 | Cloned the repository fresh with GitHub Desktop to `C:\Users\garyh\GitHub\document-loading-agent`. | new folder | 56 files, Git integrity check clean, in step with origin/main. |
+| 3 | Searched the full history for `relay/dla-relay-settings.json`. | new folder | Never committed. The relay token has never been on GitHub. |
+| 4 | Copied `relay\dla-relay-settings.json` (243 bytes) from the old folder to the new one. Ignored by Git. | new folder | Identical to the old copy. |
+| 5 | Deleted `db\relay\DLA_05_QUEUE_SAMPLE_INVOICE.sql` and `db\relay\DLA_07_STAGE_LATEST_EXTRACTION.sql` (one-time 11/19 tests, replaced by the upload page and DLA_PKG). | new folder | `db\relay` holds DLA_04, DLA_06, DLA_09. |
+| 6 | Checked all 18 sample PDFs with qpdf before deleting the old folder: 12 were damaged in the new clone (Git treated them as text and added Windows line endings). GitHub's stored copies were fine. Added `*.pdf binary` and `*.png binary` to `.gitattributes`, restored the PDFs from Git. | new folder | 18 of 18 PDFs pass qpdf. |
+
 ## 11/22/2026 (afternoon, 4:49 to 5:30 PM) - LinkedIn video quality, Rule 23, SSO discussion
 
 | Step | What | Where | Result |
