@@ -2,7 +2,7 @@
 
 Newest entries at the top. Each entry records what was done, where, and the result.
 
-## 11/22/2026 (evening, 5:40 to 5:55 PM) - Repository moved out of OneDrive, two old test scripts removed
+## 11/22/2026 (evening, 5:40 to 8:50 PM) - All repositories moved out of OneDrive, two old test scripts removed
 
 | Step | What | Where | Result |
 |---|---|---|---|
@@ -12,6 +12,10 @@ Newest entries at the top. Each entry records what was done, where, and the resu
 | 4 | Copied `relay\dla-relay-settings.json` (243 bytes) from the old folder to the new one. Ignored by Git. | new folder | Identical to the old copy. |
 | 5 | Deleted `db\relay\DLA_05_QUEUE_SAMPLE_INVOICE.sql` and `db\relay\DLA_07_STAGE_LATEST_EXTRACTION.sql` (one-time 11/19 tests, replaced by the upload page and DLA_PKG). | new folder | `db\relay` holds DLA_04, DLA_06, DLA_09. |
 | 6 | Checked all 18 sample PDFs with qpdf before deleting the old folder: 12 were damaged in the new clone (Git treated them as text and added Windows line endings). GitHub's stored copies were fine. Added `*.pdf binary` and `*.png binary` to `.gitattributes`, restored the PDFs from Git. | new folder | 18 of 18 PDFs pass qpdf. |
+| 7 | Moved the other 5 repositories (imaginary-label-platform, infrastructure-project-tracker, packaging-workbench, supply-chain-demand-workbench, warehouse-operations-intelligence-platform) the same way: OneDrive files downloaded first ("Always keep on this device"), Git checked for unsaved work, fresh clones to `C:\Users\garyh\GitHub`, every file compared, local-only files copied over, PDFs and pictures checked (1 Stick-IT PDF fixed with binary rules). | all repos | Nothing lost. Old OneDrive copies of all 6 deleted. |
+| 8 | DLA relay stopped and restarted from `C:\Users\garyh\GitHub\document-loading-agent`. | Gary's PC | Banner OK: settings, converter, Watch, token, DEV database. |
+| 9 | Stick-IT relay install kit backup in `C:\Users\garyh\OneDrive\StickIT-Relay-Setup` replaced with the current 10/18 files (was 10/16); old zip deleted by Gary. Commit of the kit to GitHub failed (Permission denied on the exe's Git object) and was undone at Gary's request. | OneDrive | 5 of 5 files identical to the repository copy. |
+| 10 | Handoff updated (`docs\DLA_SESSION_HANDOFF.md` and the project copy). | repo, project | Saved. |
 
 ## 11/22/2026 (afternoon, 4:49 to 5:30 PM) - LinkedIn video quality, Rule 23, SSO discussion
 
