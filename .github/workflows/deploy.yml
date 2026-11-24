@@ -8,9 +8,11 @@
 #   4. WAIT    the "deploy" job targets the GitHub environment DEV,
 #              which has a required reviewer; GitHub pauses here
 #              until that person clicks Approve.
-#   5. DEPLOY  SQLcl runs db/deploy/release.sql against DEV, then
-#              db/deploy/verify.sql checks that no DLA object is
-#              invalid. Any error fails the run.
+#   5. DEPLOY  SQLcl runs db/deploy/release.sql against DEV (the
+#              database scripts), then db/deploy/apex_import.sql
+#              (application 300 from apex/f300.sql, automation
+#              re-enabled), then db/deploy/verify.sql. Any error
+#              fails the run.
 #
 # Secrets (Settings -> Secrets and variables -> Actions):
 #   DEV_WALLET_BASE64  the DEV wallet zip as base64 text
@@ -116,7 +118,23 @@ jobs:
           exit
           EOF
 
-      # Verify: zero invalid DLA objects, or the run fails.
+      # Import the APEX application from apex/f300.sql and switch the
+      # automation back on (APEX disables automations on import).
+      - name: Import application 300 from apex/f300.sql
+        env:
+          DB_USER: ${{ secrets.DEV_DB_USER }}
+          DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+        run: |
+          ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
+          sql -S /nolog <<EOF
+          set cloudconfig $RUNNER_TEMP/wallet.zip
+          connect $DB_USER/"$DB_PASSWORD"@$ALIAS
+          @db/deploy/apex_import.sql
+          exit
+          EOF
+
+      # Verify: zero invalid DLA objects, application present,
+      # automation ACTIVE, or the run fails.
       - name: Verify DEV
         env:
           DB_USER: ${{ secrets.DEV_DB_USER }}

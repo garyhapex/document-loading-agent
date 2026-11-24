@@ -3,10 +3,12 @@
    Project     : Document Loading Agent (DLA) - CI/CD pipeline
    Environment : DEV (GHAPEXAPPS_ATP_DEV) - run by the pipeline
    Changes     : NO - read-only check
-   Purpose     : Step 5 "verify". After release.sql has run, every
-                 DLA object in the schema must be VALID. If any is
-                 INVALID the script raises an error, which fails
-                 the pipeline run.
+   Purpose     : Step 5 "verify". After release.sql and
+                 apex_import.sql have run:
+                   1. every DLA object in the schema is VALID
+                   2. application 300 exists in DEV_WORKSPACE
+                   3. automation "read-waiting-documents" is ACTIVE
+                 Any failure raises an error, which fails the run.
    Run as      : WKSP_WKSPPRDWORKSPACE, by SQLcl on GitHub
    Re-runnable : yes
    Author      : Claude for Gary D. Hall
@@ -26,8 +28,16 @@ WHERE  o.object_name LIKE 'DLA%'
 AND    o.status = 'INVALID'
 ORDER  BY o.object_type, o.object_name;
 
+PROMPT Application 300 and its automation (full row, for the log):
+SET LINESIZE 300
+SELECT m.*
+FROM   apex_appl_automations m
+WHERE  m.application_id = 300;
+
 DECLARE
     l_invalid NUMBER;
+    l_apps    NUMBER;
+    l_active  NUMBER;
 BEGIN
     SELECT COUNT(*)
     INTO   l_invalid
@@ -39,6 +49,27 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20100, l_invalid || ' invalid DLA object(s) after the release');
     END IF;
 
-    DBMS_OUTPUT.PUT_LINE('Verify OK: 0 invalid DLA objects');
+    SELECT COUNT(*)
+    INTO   l_apps
+    FROM   apex_applications a
+    WHERE  a.application_id = 300
+    AND    a.workspace      = 'DEV_WORKSPACE';
+
+    IF l_apps <> 1 THEN
+        RAISE_APPLICATION_ERROR(-20101, 'Application 300 not found in DEV_WORKSPACE after the import');
+    END IF;
+
+    SELECT COUNT(*)
+    INTO   l_active
+    FROM   apex_appl_automations m
+    WHERE  m.application_id = 300
+    AND    m.static_id      = 'read-waiting-documents'
+    AND    UPPER(m.polling_status) = 'ACTIVE';
+
+    IF l_active <> 1 THEN
+        RAISE_APPLICATION_ERROR(-20102, 'Automation read-waiting-documents is not ACTIVE after the import');
+    END IF;
+
+    DBMS_OUTPUT.PUT_LINE('Verify OK: 0 invalid DLA objects, application 300 present, automation ACTIVE');
 END;
 /
