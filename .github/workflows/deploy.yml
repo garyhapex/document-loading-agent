@@ -8,8 +8,9 @@
 #   4. WAIT    the "deploy" job targets the GitHub environment DEV,
 #              which has a required reviewer; GitHub pauses here
 #              until that person clicks Approve.
-#   5. DEPLOY  SQLcl runs db/deploy/release.sql against DEV (the
-#              database scripts), then db/deploy/apex_import.sql
+#   5. DEPLOY  Liquibase (inside SQLcl) runs the database scripts
+#              listed in db/deploy/changelog.xml that are not yet in
+#              its ledger, then db/deploy/apex_import.sql
 #              (application 300 from apex/f300.sql, automation
 #              re-enabled), then db/deploy/verify.sql. Any error
 #              fails the run.
@@ -103,18 +104,38 @@ jobs:
       - name: Write the DEV wallet
         run: echo "${{ secrets.DEV_WALLET_BASE64 }}" | base64 -d > "$RUNNER_TEMP/wallet.zip"
 
-      # Run the release list. WHENEVER SQLERROR in release.sql stops
-      # the run at the first error.
-      - name: Run db/deploy/release.sql on DEV
+      # Liquibase: run only the install scripts that are not yet in the
+      # ledger (table DATABASECHANGELOG), plus re-runnable scripts whose
+      # file changed. The list is db/deploy/changelog.xml.
+      # First run only: the ledger table does not exist yet, so every
+      # script on the list is recorded as already run (changelog-sync),
+      # because they were all run by hand before the pipeline existed.
+      - name: Liquibase update on DEV
         env:
           DB_USER: ${{ secrets.DEV_DB_USER }}
           DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
         run: |
           ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
+          HAS_LEDGER=$(sql -S /nolog <<EOF | grep -Eo '^[[:space:]]*[01][[:space:]]*$' | tr -d '[:space:]'
+          set cloudconfig $RUNNER_TEMP/wallet.zip
+          connect $DB_USER/"$DB_PASSWORD"@$ALIAS
+          set heading off feedback off pagesize 0
+          select count(*) from user_tables where table_name = 'DATABASECHANGELOG';
+          exit
+          EOF
+          )
+          if [ -z "$HAS_LEDGER" ]; then echo "Could not read whether the ledger exists"; exit 1; fi
+          echo "Ledger table present: $HAS_LEDGER"
+          SYNC=""
+          if [ "$HAS_LEDGER" = "0" ]; then
+            echo "First run: recording the existing scripts as already run (changelog-sync)"
+            SYNC="lb changelog-sync -changelog-file db/deploy/changelog.xml"
+          fi
           sql -S /nolog <<EOF
           set cloudconfig $RUNNER_TEMP/wallet.zip
           connect $DB_USER/"$DB_PASSWORD"@$ALIAS
-          @db/deploy/release.sql
+          $SYNC
+          lb update -changelog-file db/deploy/changelog.xml
           exit
           EOF
 
@@ -134,16 +155,18 @@ jobs:
           EOF
 
       # Verify: zero invalid DLA objects, application present,
-      # automation ACTIVE, or the run fails.
+      # automation ACTIVE, Liquibase ledger complete, or the run fails.
       - name: Verify DEV
         env:
           DB_USER: ${{ secrets.DEV_DB_USER }}
           DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
         run: |
           ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
+          EXPECTED=$(grep -c '<changeSet ' db/deploy/changelog.xml)
           sql -S /nolog <<EOF
           set cloudconfig $RUNNER_TEMP/wallet.zip
           connect $DB_USER/"$DB_PASSWORD"@$ALIAS
+          define expected_changesets = $EXPECTED
           @db/deploy/verify.sql
           exit
           EOF

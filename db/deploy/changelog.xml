@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ============================================================
+     changelog.xml  -  the Liquibase list of install scripts
+     Project     : Document Loading Agent (DLA) - CI/CD pipeline
+     Environment : DEV (GHAPEXAPPS_ATP_DEV), run by the pipeline
+     Purpose     : Every install script, in install order. On each
+                   deploy Liquibase runs only the scripts that are
+                   not yet in its ledger (table DATABASECHANGELOG in
+                   WKSP_WKSPPRDWORKSPACE), plus any re-runnable
+                   script whose file changed (runOnChange="true").
+                   DLA_01 is run-once: never edit it; add a new
+                   numbered script instead.
+                   Utilities (reset, drop-all, re-read, inventory)
+                   and read-only checks are not on this list; they
+                   are never deployed.
+     How to add a script: add one changeSet at the bottom, with a
+                   new id, pointing at the new file.
+     Runner      : runOracleScript sends each file through SQLcl
+                   itself, so SET, PROMPT, SHOW ERRORS and @ work.
+     Author      : Claude for Gary D. Hall, 11/24/2026
+     ============================================================ -->
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:n0="http://www.oracle.com/xml/ns/dbchangelog-ext"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!-- Tables -->
+    <changeSet id="dla-01-create-tables" author="garyhall" failOnError="true">
+        <n0:runOracleScript objectName="DLA_01_CREATE_TABLES" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/tables/DLA_01_CREATE_TABLES.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <changeSet id="dla-08-validation-columns" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_08_VALIDATION_COLUMNS" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/tables/DLA_08_VALIDATION_COLUMNS.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <changeSet id="dla-17-compare-column" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_17_COMPARE_COLUMN" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/tables/DLA_17_COMPARE_COLUMN.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <!-- Package DLA_PKG -->
+    <changeSet id="dla-02-package" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_02_PACKAGE" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/packages/DLA_02_PACKAGE.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <!-- Settings, vendors, model instruction -->
+    <changeSet id="dla-03-set-local-model" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_03_SET_LOCAL_MODEL" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/data/DLA_03_SET_LOCAL_MODEL.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <changeSet id="dla-10-gas-vendors" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_10_GAS_VENDORS" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/data/DLA_10_GAS_VENDORS.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <changeSet id="dla-11-gas-test-fixes" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_11_GAS_TEST_FIXES" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/data/DLA_11_GAS_TEST_FIXES.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <changeSet id="dla-13-oci-model" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_13_OCI_MODEL" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/data/DLA_13_OCI_MODEL.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <changeSet id="dla-16-watch-model" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_16_WATCH_MODEL" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/data/DLA_16_WATCH_MODEL.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <changeSet id="dla-18-rename-sample-vendor" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_18_RENAME_SAMPLE_VENDOR" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/data/DLA_18_RENAME_SAMPLE_VENDOR.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <changeSet id="dla-19-vendor-who-columns" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_19_VENDOR_WHO_COLUMNS" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/data/DLA_19_VENDOR_WHO_COLUMNS.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <!-- Relay package DLA_RELAY_PKG and the ORDS module -->
+    <changeSet id="dla-04-relay-database" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_04_RELAY_DATABASE" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/relay/DLA_04_RELAY_DATABASE.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+</databaseChangeLog>
