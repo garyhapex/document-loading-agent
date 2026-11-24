@@ -1,0 +1,131 @@
+# ============================================================
+# deploy.yml  -  the CI/CD pipeline for the Document Loading Agent
+#
+# What it does, in order (the numbers match the agreed list):
+#   3. CHECK   runs by itself on every push to main:
+#              every db script has a header block, and SQLcl can
+#              log in to DEV with the three secrets.
+#   4. WAIT    the "deploy" job targets the GitHub environment DEV,
+#              which has a required reviewer; GitHub pauses here
+#              until that person clicks Approve.
+#   5. DEPLOY  SQLcl runs db/deploy/release.sql against DEV, then
+#              db/deploy/verify.sql checks that no DLA object is
+#              invalid. Any error fails the run.
+#
+# Secrets (Settings -> Secrets and variables -> Actions):
+#   DEV_WALLET_BASE64  the DEV wallet zip as base64 text
+#   DEV_DB_USER        WKSP_WKSPPRDWORKSPACE
+#   DEV_DB_PASSWORD    that user's password
+# GitHub blanks these out of every log. No secret is in any file.
+#
+# Environment : DEV (GHAPEXAPPS_ATP_DEV) only. Never PRD.
+# Author      : Claude for Gary D. Hall, 11/24/2026
+# ============================================================
+
+name: Deploy to DEV
+
+# When to run: on every push to the main branch.
+on:
+  push:
+    branches: [main]
+
+jobs:
+
+  # ---------------------------------------------------------
+  # Step 3: CHECK
+  # ---------------------------------------------------------
+  check:
+    name: "3. Check scripts and connection"
+    runs-on: ubuntu-latest          # GitHub's own Linux computer
+    steps:
+
+      # Get a copy of the repository onto that computer.
+      - name: Get the repository files
+        uses: actions/checkout@v4
+
+      # Every .sql under db/ must say "Script" in its first 5 lines
+      # (the header block every script in this project carries).
+      - name: Every db script has a header block
+        run: |
+          bad=0
+          for f in $(find db -name '*.sql' | sort); do
+            if head -5 "$f" | grep -q 'Script'; then
+              echo "ok       $f"
+            else
+              echo "MISSING  $f"; bad=1
+            fi
+          done
+          exit $bad
+
+      # Install SQLcl (and the Java it needs) on that computer.
+      - name: Install SQLcl
+        uses: gvenzl/setup-oracle-sqlcl@v1
+
+      # Turn the wallet secret back into the zip file, in a temp folder.
+      - name: Write the DEV wallet
+        run: echo "${{ secrets.DEV_WALLET_BASE64 }}" | base64 -d > "$RUNNER_TEMP/wallet.zip"
+
+      # Log in to DEV and run one harmless query. If this fails,
+      # a secret is wrong; nothing has been changed.
+      - name: SQLcl can log in to DEV
+        env:
+          DB_USER: ${{ secrets.DEV_DB_USER }}
+          DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+        run: |
+          ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
+          echo "Connecting with alias $ALIAS"
+          sql -S /nolog <<EOF
+          set cloudconfig $RUNNER_TEMP/wallet.zip
+          connect $DB_USER/"$DB_PASSWORD"@$ALIAS
+          whenever sqlerror exit failure
+          select 'CONNECTED as ' || user || ' on ' || sys_context('userenv','db_name') as result from dual;
+          exit
+          EOF
+
+  # ---------------------------------------------------------
+  # Step 4 (the pause) and Step 5: DEPLOY and VERIFY
+  # ---------------------------------------------------------
+  deploy:
+    name: "5. Deploy to DEV and verify"
+    needs: check                    # only after step 3 passed
+    runs-on: ubuntu-latest
+    environment: DEV                # step 4: waits for the DEV reviewer
+    steps:
+
+      - name: Get the repository files
+        uses: actions/checkout@v4
+
+      - name: Install SQLcl
+        uses: gvenzl/setup-oracle-sqlcl@v1
+
+      - name: Write the DEV wallet
+        run: echo "${{ secrets.DEV_WALLET_BASE64 }}" | base64 -d > "$RUNNER_TEMP/wallet.zip"
+
+      # Run the release list. WHENEVER SQLERROR in release.sql stops
+      # the run at the first error.
+      - name: Run db/deploy/release.sql on DEV
+        env:
+          DB_USER: ${{ secrets.DEV_DB_USER }}
+          DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+        run: |
+          ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
+          sql -S /nolog <<EOF
+          set cloudconfig $RUNNER_TEMP/wallet.zip
+          connect $DB_USER/"$DB_PASSWORD"@$ALIAS
+          @db/deploy/release.sql
+          exit
+          EOF
+
+      # Verify: zero invalid DLA objects, or the run fails.
+      - name: Verify DEV
+        env:
+          DB_USER: ${{ secrets.DEV_DB_USER }}
+          DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+        run: |
+          ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
+          sql -S /nolog <<EOF
+          set cloudconfig $RUNNER_TEMP/wallet.zip
+          connect $DB_USER/"$DB_PASSWORD"@$ALIAS
+          @db/deploy/verify.sql
+          exit
+          EOF
