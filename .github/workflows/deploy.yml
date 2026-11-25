@@ -29,6 +29,8 @@
 # Changed     : 11/24/2026 - target moved from DEV (the proving run)
 #               to PRD. The first-run changelog-sync is gone: PRD
 #               starts empty, so every script must really run.
+#               Evening: the Liquibase step now fails when the ledger
+#               is short (Liquibase stopping early returned exit 0).
 # ============================================================
 
 name: Deploy to PRD
@@ -118,17 +120,35 @@ jobs:
       # ledger (table DATABASECHANGELOG), plus re-runnable scripts whose
       # file changed. The list is db/deploy/changelog.xml.
       # On the first PRD run the ledger does not exist: Liquibase
-      # creates it and runs all the scripts, in order.
+      # creates it and runs all the scripts, in order. Afterwards the
+      # ledger row count must equal the changeSet count, or the step
+      # fails before the application import.
       - name: Liquibase update on PRD
         env:
           DB_USER: ${{ secrets.PRD_DB_USER }}
           DB_PASSWORD: ${{ secrets.PRD_DB_PASSWORD }}
         run: |
           ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
+          EXPECTED=$(grep -c '<changeSet ' db/deploy/changelog.xml)
           sql -S /nolog <<EOF
           set cloudconfig $RUNNER_TEMP/wallet.zip
           connect $DB_USER/"$DB_PASSWORD"@$ALIAS
           lb update -changelog-file db/deploy/changelog.xml
+          set serveroutput on
+          whenever sqlerror exit failure
+          -- Liquibase stopping early does not fail the step by itself
+          -- (run 6 proved that), so count the ledger: one row per
+          -- changeSet, or this step fails here and nothing else runs.
+          declare
+              l_rows number;
+          begin
+              select count(*) into l_rows from databasechangelog;
+              if l_rows <> $EXPECTED then
+                  raise_application_error(-20200, 'Liquibase stopped early: ledger has ' || l_rows || ' rows, changelog.xml has $EXPECTED changeSets. Read the Liquibase output above.');
+              end if;
+              dbms_output.put_line('Ledger complete: ' || l_rows || ' of $EXPECTED');
+          end;
+          /
           exit
           EOF
 

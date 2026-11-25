@@ -18,6 +18,9 @@
      Runner      : runOracleScript sends each file through SQLcl
                    itself, so SET, PROMPT, SHOW ERRORS and @ work.
      Author      : Claude for Gary D. Hall, 11/24/2026
+     Changed     : 11/24/2026 (evening) - specs before bodies: run 6 on
+                   PRD failed because DLA_PKG's body could not run
+                   its test before DLA_RELAY_PKG existed.
      ============================================================ -->
 <databaseChangeLog
     xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
@@ -44,10 +47,30 @@
         </n0:runOracleScript>
     </changeSet>
 
-    <!-- Package DLA_PKG -->
-    <changeSet id="dla-02-package" author="garyhall" failOnError="true" runOnChange="true">
-        <n0:runOracleScript objectName="DLA_02_PACKAGE" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
-            <n0:source><![CDATA[db/packages/DLA_02_PACKAGE.sql]]></n0:source>
+    <!-- Packages. DLA_PKG and DLA_RELAY_PKG call each other, so
+         both specs go in first, then both bodies (the relay body
+         is inside DLA_04 with its settings and ORDS module). -->
+    <changeSet id="dla-02-package-spec" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_02_PACKAGE_SPEC" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/packages/DLA_02_PACKAGE_SPEC.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <changeSet id="dla-04-relay-spec" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_04_RELAY_SPEC" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/relay/DLA_04_RELAY_SPEC.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <changeSet id="dla-02-package-body" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_02_PACKAGE_BODY" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/packages/DLA_02_PACKAGE_BODY.sql]]></n0:source>
+        </n0:runOracleScript>
+    </changeSet>
+
+    <changeSet id="dla-04-relay-database" author="garyhall" failOnError="true" runOnChange="true">
+        <n0:runOracleScript objectName="DLA_04_RELAY_DATABASE" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
+            <n0:source><![CDATA[db/relay/DLA_04_RELAY_DATABASE.sql]]></n0:source>
         </n0:runOracleScript>
     </changeSet>
 
@@ -91,13 +114,6 @@
     <changeSet id="dla-19-vendor-who-columns" author="garyhall" failOnError="true" runOnChange="true">
         <n0:runOracleScript objectName="DLA_19_VENDOR_WHO_COLUMNS" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
             <n0:source><![CDATA[db/data/DLA_19_VENDOR_WHO_COLUMNS.sql]]></n0:source>
-        </n0:runOracleScript>
-    </changeSet>
-
-    <!-- Relay package DLA_RELAY_PKG and the ORDS module -->
-    <changeSet id="dla-04-relay-database" author="garyhall" failOnError="true" runOnChange="true">
-        <n0:runOracleScript objectName="DLA_04_RELAY_DATABASE" ownerName="WKSP_WKSPPRDWORKSPACE" sourceType="FILE">
-            <n0:source><![CDATA[db/relay/DLA_04_RELAY_DATABASE.sql]]></n0:source>
         </n0:runOracleScript>
     </changeSet>
 

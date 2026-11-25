@@ -1,7 +1,7 @@
 /* ============================================================
    Script      : DLA_11_GAS_TEST_FIXES.sql
    Project     : Document Loading Agent (DLA) - Phase 3
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
+   Environment : DEV by hand (SQL Developer); PRD by the pipeline
    Changes     : YES
                  1. DLA_SETTINGS: replaces EXTRACTION_PROMPT, the
                     instruction sent to the AI model.
@@ -29,7 +29,7 @@
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : WKSP_WKSPPRDWORKSPACE or ADMIN, SQL Developer,
                  F5 (Run Script)
-   Run after   : DLA_02_PACKAGE.sql
+   Run after   : DLA_02_PACKAGE_BODY.sql
    Re-runnable : yes
    Author      : Claude for Gary D. Hall
    Date        : 11/19/2026

@@ -1,7 +1,7 @@
 /* ============================================================
    Script      : DLA_17_COMPARE_COLUMN.sql
    Project     : Document Loading Agent (DLA) - Phase 4
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
+   Environment : DEV by hand (SQL Developer); PRD by the pipeline
    Changes     : YES - adds one column, PURPOSE, to
                  DLA_EXTRACTIONS. Existing rows get LOAD.
    Purpose     : A read now says why it was made:
@@ -14,12 +14,12 @@
                              NOT staged or loaded, so a compare
                              never creates a second copy of an
                              invoice in the review queue.
-                 DLA_02_PACKAGE.sql and DLA_04_RELAY_DATABASE.sql
+                 DLA_02_PACKAGE_SPEC.sql and DLA_04_RELAY_SPEC.sql
                  (the versions dated 11/21/2026) read this column.
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : WKSP_WKSPPRDWORKSPACE or ADMIN, SQL Developer,
                  F5 (Run Script)
-   Run before  : DLA_02_PACKAGE.sql and DLA_04_RELAY_DATABASE.sql
+   Run before  : DLA_02_PACKAGE_SPEC.sql and DLA_04_RELAY_SPEC.sql
                  (the 11/21/2026 versions)
    Re-runnable : yes - does nothing if the column is there
    Author      : Claude for Gary D. Hall

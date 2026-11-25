@@ -1,7 +1,7 @@
 /* ============================================================
    Script      : DLA_16_WATCH_MODEL.sql
    Project     : Document Loading Agent (DLA) - Phase 4
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
+   Environment : DEV by hand (SQL Developer); PRD by the pipeline
    Changes     : YES - sets one row in DLA_SETTINGS: WATCH_MODEL.
                  Changes nothing else.
    Purpose     : Chooses which reader the watched folder

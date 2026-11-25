@@ -1,7 +1,7 @@
 /* ============================================================
    Script      : DLA_08_VALIDATION_COLUMNS.sql
    Project     : Document Loading Agent (DLA) - Phase 3
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
+   Environment : DEV by hand (SQL Developer); PRD by the pipeline
    Changes     : YES - adds one column, FLAG_SOURCE, to
                  DLA_STG_FLAGS. Changes no existing data.
    Purpose     : A flag now records where it came from:
@@ -14,7 +14,7 @@
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : WKSP_WKSPPRDWORKSPACE or ADMIN, SQL Developer,
                  F5 (Run Script)
-   Run before  : DLA_02_PACKAGE.sql (the version with the checks)
+   Run before  : DLA_02_PACKAGE_SPEC.sql
    Re-runnable : yes - does nothing if the column is there
    Author      : Claude for Gary D. Hall
    Date        : 11/19/2026

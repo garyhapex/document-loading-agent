@@ -1,7 +1,7 @@
 /* ============================================================
    Script      : DLA_19_VENDOR_WHO_COLUMNS.sql
    Project     : Document Loading Agent (DLA)
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
+   Environment : DEV by hand (SQL Developer); PRD by the pipeline
    Changes     : YES - adds two columns and one trigger to
                  DLA_VENDORS, and corrects one row.
    Purpose     : Standard "who" columns on the vendor list.

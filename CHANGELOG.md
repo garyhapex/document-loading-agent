@@ -9,7 +9,9 @@ Newest entries at the top. Each entry records what was built or run, where, and 
 | 1 | `db/utilities/DLA_20_PRD_CHECK.sql` (read-only) run on PRD as WKSP_WKSPPRDWORKSPACE. | PRD, SQL Developer | APEX 26.1.6; workspace PRD_WORKSPACE; no DLA objects, no Liquibase ledger; PKG_IMAGINARY_SPEC_READ VALID; ORDS enabled, path prd_workspace; credential credentials_for_ocigenai_1 present; applications 106, 200, 201 (300 free). |
 | 2 | `.github/workflows/deploy.yml`: secrets PRD_WALLET_BASE64 / PRD_DB_USER / PRD_DB_PASSWORD; environment `PRD`; first-run changelog-sync removed (PRD starts empty, every script runs); `APEX_WORKSPACE` passed to `apex_import.sql` and `verify.sql` as `&apex_workspace`. README environment table and pipeline section updated. | repository | Committed. |
 | 3 | Three repository secrets created: `PRD_WALLET_BASE64`, `PRD_DB_USER`, `PRD_DB_PASSWORD`. GitHub environment `PRD` created, required reviewer garyhapex. | GitHub | Saved. |
-| 4 | Run 6: first deploy to PRD. | GitHub Actions | (pending) |
+| 4 | Run 6: first deploy to PRD, approved. | GitHub Actions | Failed in verify: DLA_PKG body INVALID, ledger 3 of 12 (DLA_01, 08, 17 only). Liquibase stopped at DLA_02: its body calls DLA_RELAY_PKG, which did not exist yet, so the test at the end of the script raised. The Liquibase step still returned success; the APEX import ran; verify caught it. |
+| 5 | Specs before bodies. `DLA_02_PACKAGE.sql` split into `DLA_02_PACKAGE_SPEC.sql` and `DLA_02_PACKAGE_BODY.sql`; the spec of DLA_RELAY_PKG split out of `DLA_04_RELAY_DATABASE.sql` into `DLA_04_RELAY_SPEC.sql`. `changelog.xml` order: 01, 08, 17, 02 spec, 04 spec, 02 body, 04 (token, relay body, ORDS), 03, 10, 11, 13, 16, 18, 19 (14 changeSets). `deploy.yml`: the Liquibase step now fails when the ledger row count is short of the changeSet count. Script headers: "do NOT run on PRD" replaced by "DEV by hand; PRD by the pipeline". README install order renumbered to match. | repository | Committed. |
+| 6 | Run 7: second deploy to PRD. | GitHub Actions | (pending) |
 
 ## 11/24/2026 - CI/CD pipeline (GitHub Actions, approval, Liquibase, APEX import)
 

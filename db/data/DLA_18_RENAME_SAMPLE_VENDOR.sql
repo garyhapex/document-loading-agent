@@ -1,7 +1,7 @@
 /* ============================================================
    Script      : DLA_18_RENAME_SAMPLE_VENDOR.sql
    Project     : Document Loading Agent (DLA)
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
+   Environment : DEV by hand (SQL Developer); PRD by the pipeline
    Changes     : YES - renames one fictional vendor in DLA_VENDORS.
    Purpose     : The sample vendor "Kennesaw Ridge Utility Locating
                  LLC" is renamed "Oconee Ridge Utility Locating LLC",

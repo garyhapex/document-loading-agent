@@ -1,7 +1,7 @@
 /* ============================================================
    Script      : DLA_10_GAS_VENDORS.sql
    Project     : Document Loading Agent (DLA) - Phase 3
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
+   Environment : DEV by hand (SQL Developer); PRD by the pipeline
    Changes     : YES - adds four fictional natural gas vendors to
                  DLA_VENDORS, each only if it is not there.
    Purpose     : The natural gas sample invoices in

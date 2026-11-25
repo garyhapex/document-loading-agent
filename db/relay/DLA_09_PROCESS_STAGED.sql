@@ -16,7 +16,7 @@
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : WKSP_WKSPPRDWORKSPACE or ADMIN, SQL Developer,
                  F5 (Run Script)
-   Run after   : DLA_02_PACKAGE.sql and DLA_04_RELAY_DATABASE.sql
+   Run after   : DLA_02_PACKAGE_BODY.sql and DLA_04_RELAY_DATABASE.sql
    Re-runnable : yes - an invoice already checked is skipped
    Author      : Claude for Gary D. Hall
    Date        : 11/19/2026

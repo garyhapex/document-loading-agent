@@ -1,7 +1,7 @@
 /* ============================================================
    Script      : DLA_13_OCI_MODEL.sql
    Project     : Document Loading Agent (DLA) - Phase 4
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
+   Environment : DEV by hand (SQL Developer); PRD by the pipeline
    Changes     : YES - adds or updates 5 rows in DLA_SETTINGS:
                    OCI_MODEL, OCI_ENDPOINT, OCI_CREDENTIAL,
                    OCI_COMPARTMENT_OCID, OCI_GENAI_MODEL
@@ -27,7 +27,7 @@
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : ADMIN or WKSP_WKSPPRDWORKSPACE
                  SQL Developer, F5 (Run Script)
-   Run after   : DLA_02_PACKAGE.sql (the 11/20/2026 version)
+   Run after   : DLA_02_PACKAGE_BODY.sql
    Re-runnable : yes (updates the values in place)
    Author      : Claude for Gary D. Hall
    Date        : 11/20/2026

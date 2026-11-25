@@ -1,7 +1,7 @@
 /* ============================================================
    Script      : DLA_03_SET_LOCAL_MODEL.sql
    Project     : Document Loading Agent (DLA) - Phase 2
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
+   Environment : DEV by hand (SQL Developer); PRD by the pipeline
    Changes     : YES - updates one row in DLA_SETTINGS
                  (OLLAMA_MODEL) and writes one audit row.
    Purpose     : The local model changed from llama3.2-vision to
@@ -9,7 +9,7 @@
                  run on Ollama 0.30.0 and later.
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : ADMIN, SQL Developer, F5 (Run Script)
-   Run after   : DLA_02_PACKAGE.sql
+   Run after   : DLA_02_PACKAGE_BODY.sql
    Re-runnable : yes
    Author      : Claude for Gary D. Hall
    Date        : 11/19/2026

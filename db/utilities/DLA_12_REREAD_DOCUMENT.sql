@@ -26,7 +26,7 @@
    Schema      : WKSP_WKSPPRDWORKSPACE (workspace DEV_WORKSPACE)
    Run as      : WKSP_WKSPPRDWORKSPACE or ADMIN, SQL Developer,
                  F5 (Run Script)
-   Run after   : DLA_02_PACKAGE.sql and DLA_11_GAS_TEST_FIXES.sql
+   Run after   : DLA_02_PACKAGE_BODY.sql and DLA_11_GAS_TEST_FIXES.sql
    Re-runnable : yes, but it refuses while any listed document
                  is already waiting or being read (ORA-20080),
                  and then changes nothing at all
