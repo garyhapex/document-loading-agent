@@ -44,7 +44,7 @@ jobs:
 
       # Get a copy of the repository onto that computer.
       - name: Get the repository files
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # Every .sql under db/ must say "Script" in its first 5 lines
       # (the header block every script in this project carries).
@@ -96,7 +96,7 @@ jobs:
     steps:
 
       - name: Get the repository files
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install SQLcl
         uses: gvenzl/setup-oracle-sqlcl@v1
