@@ -2,6 +2,13 @@
 
 Newest entries at the top. Each entry records what was built or run, where, and the result.
 
+## 11/25/2026 (morning) - First release: v1.0.0 to PRD
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Release v1.0.0 created on the Releases page: new tag `v1.0.0` on `main`, title "v1.0.0 — Document Loading Agent", release notes listing the application, the DLA_* objects, the two readers, the relay service and the checks. Published. | GitHub | First release of the repository. |
+| 2 | Run 15, started by the event "Release v1.0.0 published", waited for approval on environment PRD and was approved. | GitHub Actions | Deploy to PRD completed successfully in 2 min 19 s. Proves that the deploy job runs only from a published release, as changed in run 14. |
+
 ## 11/24/2026 (night) - Relay as a Windows service
 
 | Step | What | Where | Result |
