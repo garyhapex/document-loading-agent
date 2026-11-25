@@ -134,7 +134,7 @@ The pipeline signs in with three repository secrets: `PRD_WALLET_BASE64`, `PRD_D
 
 ## Status
 
-Working end to end on DEV; the pipeline deploys to PRD. `CHANGELOG.md` records everything that was built and run, by date.
+Working end to end on DEV and on PRD (the pipeline deploys to PRD; the relay feeds PRD). `CHANGELOG.md` records everything that was built and run, by date.
 
 | Phase | Scope | Status |
 |---|---|---|

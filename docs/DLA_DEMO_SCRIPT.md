@@ -8,7 +8,7 @@ Written by Claude for Gary D. Hall, 11/21/2026. Application 300 on DEV (DEV_WORK
 |---|---|---|---|
 | 1 | SQL Developer, DEV WKSP_WKSPPRDWORKSPACE | Run `db\utilities\DLA_15_RESET_DEMO_DATA.sql` | All counts 0, 9 vendors kept |
 | 2 | SQL Developer, DEV WKSP_WKSPPRDWORKSPACE | Check `db\data\DLA_16_WATCH_MODEL.sql` says `'OLLAMA'` on the CHANGE HERE line, run it | `WATCH_MODEL = OLLAMA` |
-| 3 | PowerShell | `cd C:\Users\garyh\OneDrive\Documents\GitHub\document-loading-agent` then `node relay\dla-relay.js` | Banner shows `Watch : C:\DLA\inbox`. Leave it open |
+| 3 | PowerShell | `cd C:\Users\garyh\GitHub\document-loading-agent` then `node relay\dla-relay.js` | Banner shows `Watch : C:\DLA\inbox`. Leave it open |
 | 4 | File Explorer | Copy `samples\invoices-gas\GAS_01_clean_magnolia_pipe.pdf` into `C:\DLA\inbox` and wait 60 seconds | Warms the model up (first read is slow). Then run step 1 again so the dashboard starts at zero |
 | 5 | Chrome | Sign in to the application, open **Home** | All badges 0 |
 
