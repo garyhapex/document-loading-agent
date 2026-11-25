@@ -1,7 +1,10 @@
 /* ============================================================
    Script      : DLA_15_RESET_DEMO_DATA.sql
    Project     : Document Loading Agent (DLA) - Phase 4
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
+   Environment : DEV or PRD, by hand (SQL Developer). Demo data
+                 only: the invoices are fictional samples.
+                 (11/25/2026: PRD allowed, the demo now runs
+                 on PRD.)
    Changes     : YES - DESTRUCTIVE for demo data. Empties these
                  tables: DLA_INVOICE_LINES, DLA_INVOICES,
                  DLA_STG_FLAGS, DLA_STG_LINES, DLA_STG_HEADERS,
@@ -66,7 +69,7 @@ BEGIN
         RAISE_APPLICATION_ERROR(
             -20015,
             l_running || ' read(s) are RUNNING right now. Wait for the relay to finish '
-            || '(watch the PowerShell window), then run this script again.'
+            || '(the relay service or OCI is reading), then run this script again.'
         );
     END IF;
 

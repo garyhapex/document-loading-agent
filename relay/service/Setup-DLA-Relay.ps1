@@ -170,7 +170,7 @@ if ($envTag -ne 'DEV' -and $envTag -ne 'PRD') {
 }
 Say ''
 Say '  Database address: the ORDS address ending in /prd_workspace, for example'
-Say '  https://g4154018976057a-svkrjss9vcz0cy7p.adb.us-chicago-1.oraclecloudapps.com/ords/prd_workspace'
+Say '  https://abc1234567890ab-mydatabase.adb.us-chicago-1.oraclecloudapps.com/ords/prd_workspace'
 $ordsUrl = (Read-Host '  Database address').Trim().TrimEnd('/')
 if (-not $ordsUrl.StartsWith('https://')) {
     Stop-Here 'the database address must start with https://'

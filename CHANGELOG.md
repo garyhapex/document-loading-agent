@@ -2,6 +2,15 @@
 
 Newest entries at the top. Each entry records what was built or run, where, and the result.
 
+## 11/25/2026 (afternoon) - Address out of the setup script, cleanup script, demo script for PRD
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | `relay/service/Setup-DLA-Relay.ps1` line 173: the example database address shown by the setup prompt was the real PRD address; replaced with a made-up one of the same shape. The installed relay service is not affected (the line only prints text during setup). The address remains in the history of commit d0b4b35 and later; not rewritten (rewriting would replace release v1.0.0, and GitHub keeps old commits reachable by id). | repository | Search of all tracked files for both database host names: 0 hits. |
+| 2 | `db/utilities/DLA_99_DROP_ALL.sql`: also drops the Liquibase ledger tables DATABASECHANGELOG, DATABASECHANGELOGLOCK and DATABASECHANGELOG_ACTIONS, after a read-only check (new Block 0) that every ledger row is a DLA changeSet (id dla-...); otherwise it stops with ORA-20031 before dropping anything. Check 1 now lists the ledger tables too. Without this, a reinstall after a clean start would find a ledger saying every script had run, and the pipeline would install nothing. | repository | Not run (destructive; for a clean start only). |
+| 3 | `db/utilities/DLA_15_RESET_DEMO_DATA.sql`: allowed on PRD by hand (demo data only, fictional invoices); the "still reading" message no longer mentions a PowerShell window. | repository | Header and message only. |
+| 4 | `docs/DLA_DEMO_SCRIPT.md` updated for PRD: reset on PRD; set Tallulah Inactive on the Vendors page (added on PRD today, so GAS_06 would otherwise load); relay checked as the Windows service instead of started by hand; WATCH_MODEL already set by the pipeline; Upload and Compare fill in by themselves (no Refresh); close mentions release-only deploys. | repository | Written. Demo not yet rehearsed. |
+
 ## 11/25/2026 (midday) - Review page and Compare Models tested on PRD
 
 | Step | What | Where | Result |
