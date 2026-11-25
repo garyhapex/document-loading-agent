@@ -100,6 +100,16 @@ node relay\dla-relay.js
 
 The relay creates the watched folder with `done` and `failed` inside it on first start.
 
+### The relay as a Windows service
+
+On a PC that should run the relay all the time, install it as a Windows service instead of starting it in a window. The service starts with the PC and restarts itself if it stops on an error.
+
+1. On GitHub: **Actions** → **Build relay** → the latest green run → under **Artifacts**, download **DLA-Relay-Setup** (a zip). The workflow `.github/workflows/build-relay.yml` builds it on every push that changes `relay/`: `relay/dla-relay.js` as one program file, `DLA-Relay.exe` (Node 22 inside), plus the WinSW 2.12.0 service wrapper and the files in `relay/service/`.
+2. Extract the zip and double-click `Setup-DLA-Relay.cmd`. It asks for administrator rights, then for DEV or PRD, the database address (ending in `/prd_workspace`) and that database's RELAY_TOKEN, and checks them with the database before installing anything.
+3. It installs to `C:\Program Files\DLA Relay PRD` (or `DEV`) as the service **DLA Invoice Relay PRD**. The settings file there can be read only by SYSTEM and Administrators. The relay's output goes to `DLA-Relay-Service.out.log` in the same folder.
+
+To remove it: `Setup-DLA-Relay.cmd /uninstall`. Ollama itself still runs in the signed-in user's account; invoices wait while nobody is signed in.
+
 ## Deployment pipeline (CI/CD)
 
 Every push to `main` starts `.github/workflows/deploy.yml` on GitHub:

@@ -3,7 +3,15 @@
 // Document Loading Agent -- Invoice Relay
 //
 // Author  : Claude for Gary D. Hall
-// Version : 1.2.2 (11/21/2026)
+// Version : 1.3.0 (11/24/2026)
+//
+// 1.3.0 (11/24/2026): can run as a Windows service. Built into one program
+//   file, DLA-Relay.exe (pkg, by .github/workflows/build-relay.yml), and
+//   installed by relay\service\Setup-DLA-Relay.cmd under WinSW, the same
+//   wrapper the Stick-IT relay uses. As DLA-Relay.exe it reads
+//   dla-relay-settings.json from the folder the .exe is in; as
+//   "node relay\dla-relay.js" it reads it next to this file, as before.
+//   Nothing else changed.
 //
 // 1.2.2 (11/21/2026): every read asks Ollama to keep the model loaded on the
 //   graphics card for 24 hours (keep_alive). Ollama's default is 5 minutes,
@@ -79,7 +87,8 @@
 //   The two sub-folders are created by the relay if they are missing.
 //
 // SETTINGS
-//   1. dla-relay-settings.json, in the same folder as this file:
+//   1. dla-relay-settings.json, in the same folder as this file (or, for
+//      DLA-Relay.exe, the same folder as the .exe):
 //        { "ords_base_url": "https://.../ords/prd_workspace",
 //          "relay_token":   "...",
 //          "watch_folder":  "C:\\DLA\\inbox" }
@@ -102,7 +111,7 @@
 //   in. No npm packages. pdftoppm (Poppler) is needed only for PDFs.
 //
 /*
-cd C:\Users\GHAPEX\OneDrive\Documents\GitHub\document-loading-agent
+cd C:\Users\garyh\GitHub\document-loading-agent
 node relay\dla-relay.js
  */
 // ============================================================================
@@ -117,13 +126,16 @@ const path    = require('path');
 const os      = require('os');
 const { execFile, execFileSync } = require('child_process');
 
-const RELAY_VERSION = '1.2.2';
+const RELAY_VERSION = '1.3.0';
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-const SETTINGS_FILE = path.join(__dirname, 'dla-relay-settings.json');
+// Built as DLA-Relay.exe (pkg), __dirname is a folder inside the program
+// file, so the settings are read from the folder the .exe is in instead.
+const SETTINGS_DIR  = process.pkg ? path.dirname(process.execPath) : __dirname;
+const SETTINGS_FILE = path.join(SETTINGS_DIR, 'dla-relay-settings.json');
 
 function loadSettings() {
     if (fs.existsSync(SETTINGS_FILE)) {

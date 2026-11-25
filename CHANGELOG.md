@@ -2,6 +2,16 @@
 
 Newest entries at the top. Each entry records what was built or run, where, and the result.
 
+## 11/24/2026 (night) - Relay as a Windows service
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Pattern taken from the Stick-IT relay kit: WinSW 2.12.0 wrapper (same file, SHA-256 05b82d46...a0da), a double-click setup that asks for administrator rights, one service per environment, settings readable by SYSTEM and Administrators only, restart on failure, rolling logs. | - | - |
+| 2 | `relay/dla-relay.js` 1.3.0: when built as DLA-Relay.exe, reads `dla-relay-settings.json` from the .exe's folder. Nothing else changed. | repository | Test build with pkg 6.26.0: DLA-Relay.exe, 57,675,298 bytes. |
+| 3 | `relay/service/`: `Setup-DLA-Relay.cmd`, `Setup-DLA-Relay.ps1` (asks DEV or PRD, the database address and the token; checks the token against the documents endpoint, which answers 400 for a right token and 401 for a wrong one and stores nothing; finds pdftoppm for the installing user and writes its path, because SYSTEM cannot find it; warns if Ollama is not answering; installs to `C:\Program Files\DLA Relay PRD`; `/uninstall` removes one), `DLA-Relay-Service.xml` (template). | repository | PowerShell parser: no errors. |
+| 4 | `.github/workflows/build-relay.yml` (new): on a push that changes `relay/`, or by hand, builds DLA-Relay.exe, adds the checked wrapper and the setup files, and publishes them as the download DLA-Relay-Setup. No secret, no approval, no database. `deploy.yml`: pushes that change only `relay/` or `build-relay.yml` no longer start the database pipeline. `.gitignore`: built kit and .exe files. README: "The relay as a Windows service". | repository | Committed. |
+| 5 | Build relay, first run. | GitHub Actions | (pending) |
+
 ## 11/24/2026 (evening) - Pipeline target moved from DEV to PRD
 
 | Step | What | Where | Result |

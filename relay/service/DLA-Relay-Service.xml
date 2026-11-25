@@ -1,0 +1,38 @@
+<!--
+  DLA-Relay-Service.xml
+  Document Loading Agent - Invoice Relay - Windows service definition
+
+  Read by DLA-Relay-Service.exe (WinSW 2.12.0, the open-source Windows
+  service wrapper, renamed; the same file the Stick-IT relay uses). It makes
+  DLA-Relay.exe a normal Windows service: started with the PC, started
+  again if it stops on an error.
+
+  This copy is the TEMPLATE. Setup-DLA-Relay writes the installed copy
+  with this relay's own <id> and <name>, made from the environment:
+    <id>DLARelay-PRD</id>
+    <name>DLA Invoice Relay PRD</name>
+  so a DEV relay and a PRD relay can share one PC.
+
+  %BASE% is the folder the installed copy is in
+  (C:\Program Files\DLA Relay PRD). The relay reads
+  dla-relay-settings.json from that same folder.
+
+  Author : Claude for Gary D. Hall, 11/24/2026
+-->
+<service>
+  <id>DLARelay</id>
+  <name>DLA Invoice Relay</name>
+  <description>Document Loading Agent: asks the database for invoices to read, reads them with the local AI model (Ollama) on this PC, sends the answers back, and sends in files dropped in the watched folder. Calls out only (HTTPS); nothing calls in.</description>
+  <executable>%BASE%\DLA-Relay.exe</executable>
+  <workingdirectory>%BASE%</workingdirectory>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <log mode="roll-by-size">
+    <sizeThreshold>5120</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

@@ -1,0 +1,70 @@
+# ============================================================
+# build-relay.yml  -  builds the relay install kit
+#
+# What it does: turns relay/dla-relay.js into one program file,
+# DLA-Relay.exe (pkg, Node 22 inside, so the PC needs no Node),
+# adds the Windows service wrapper (WinSW 2.12.0, the same file
+# the Stick-IT relay uses, checked by its SHA-256) renamed to
+# DLA-Relay-Service.exe, and the setup files from relay/service/.
+# The result is one download on the run's page, under Artifacts:
+# DLA-Relay-Setup. Unzip it on the relay PC and double-click
+# Setup-DLA-Relay.cmd.
+#
+# When it runs: on a push to main that changes relay/ or this
+# file, or by hand (Actions -> Build relay -> Run workflow).
+# It changes no database and needs no approval and no secret.
+# The built files never go into Git.
+#
+# Author : Claude for Gary D. Hall, 11/24/2026
+# ============================================================
+
+name: Build relay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'relay/**'
+      - '.github/workflows/build-relay.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: "Build DLA-Relay-Setup"
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Get the repository files
+        uses: actions/checkout@v6
+
+      # pkg 6 needs Node 22 or later to run.
+      - name: Install Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # One Windows program file with Node 22 inside.
+      - name: Build DLA-Relay.exe
+        run: |
+          mkdir -p kit
+          npx -y @yao-pkg/pkg@6.26.0 relay/dla-relay.js --targets node22-win-x64 --output kit/DLA-Relay.exe
+          ls -l kit/DLA-Relay.exe
+
+      # The service wrapper. The checksum must match the WinSW 2.12.0
+      # file the Stick-IT relay kit uses, or the build stops.
+      - name: Add the service wrapper (WinSW 2.12.0)
+        run: |
+          curl -fsSL -o kit/DLA-Relay-Service.exe https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe
+          echo "05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da  kit/DLA-Relay-Service.exe" | sha256sum -c -
+
+      - name: Add the setup files
+        run: |
+          cp relay/service/Setup-DLA-Relay.cmd relay/service/Setup-DLA-Relay.ps1 relay/service/DLA-Relay-Service.xml kit/
+          ls -l kit
+
+      - name: Publish the kit as a download
+        uses: actions/upload-artifact@v7
+        with:
+          name: DLA-Relay-Setup
+          path: kit/
+          retention-days: 30

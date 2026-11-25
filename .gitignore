@@ -21,3 +21,8 @@ desktop.ini
 # Relay settings hold the relay token - never commit
 relay/dla-relay-settings.json
 ecosystem.config.js
+
+# Built relay install kit (made by build-relay.yml, downloaded from Actions) - never commit
+kit/
+*.exe
+DLA-Relay-Setup*.zip
