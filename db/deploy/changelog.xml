@@ -8,7 +8,9 @@
                    not yet in its ledger (table DATABASECHANGELOG in
                    WKSP_WKSPPRDWORKSPACE), plus any re-runnable
                    script whose file changed (runOnChange="true").
-                   DLA_01 is run-once: never edit it; add a new
+                   DLA_01 is run-once: never edit it, not even a
+                   comment line (the checksum covers the whole file;
+                   run 7 on 11/24 failed on exactly that); add a new
                    numbered script instead.
                    Utilities (reset, drop-all, re-read, inventory)
                    and read-only checks are not on this list; they

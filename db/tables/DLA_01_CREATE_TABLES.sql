@@ -1,7 +1,7 @@
 /* ============================================================
    Script      : DLA_01_CREATE_TABLES.sql
    Project     : Document Loading Agent (DLA) - Phase 1
-   Environment : DEV by hand (SQL Developer); PRD by the pipeline
+   Environment : DEV (GHAPEXAPPS_ATP_DEV) - do NOT run on PRD
    Changes     : YES - creates 10 tables, their indexes, and
                  seed rows in DLA_SETTINGS and DLA_VENDORS.
                  Touches nothing that does not start with DLA_.
