@@ -4,9 +4,13 @@
 # What it does, in order (the numbers match the agreed list):
 #   1-2. The developer builds and tests on DEV by hand, exports
 #        the application to apex/f300.sql, commits and pushes.
-#   3. CHECK   runs by itself on every push to main:
-#              every db script has a header block, and SQLcl can
-#              log in to PRD with the three secrets.
+#   3. CHECK   runs by itself on every push to main and on every
+#              release: every db script has a header block, and
+#              SQLcl can log in to PRD with the three secrets.
+#              A push stops here. Production is never asked.
+#   RELEASE    a person publishes a GitHub release with a version
+#              number (v1.0, v1.1, ...) and notes saying what is in
+#              it. Only a release goes on to steps 4 and 5.
 #   4. WAIT    the "deploy" job targets the GitHub environment PRD,
 #              which has a required reviewer; GitHub pauses here
 #              until that person clicks Approve.
@@ -32,12 +36,15 @@
 #               starts empty, so every script must really run.
 #               Evening: the Liquibase step now fails when the ledger
 #               is short (Liquibase stopping early returned exit 0).
+#               Night: production is deployed only from a published
+#               release; a push to main runs the check and stops.
 # ============================================================
 
 name: Deploy to PRD
 
 # When to run: on every push to the main branch.
 on:
+  # A push to main: step 3 (check) only.
   push:
     branches: [main]
     # A push that changes ONLY files on this list does not start this
@@ -52,6 +59,9 @@ on:
       - 'README.md'
       - 'docs/**'
       - 'samples/**'
+  # A published release: step 3, then steps 4 and 5 (deploy to PRD).
+  release:
+    types: [published]
 
 # Values that are not secrets but differ per environment.
 env:
@@ -116,6 +126,7 @@ jobs:
   deploy:
     name: "5. Deploy to PRD and verify"
     needs: check                    # only after step 3 passed
+    if: github.event_name == 'release'   # only a published release deploys
     runs-on: ubuntu-latest
     environment: PRD                # step 4: waits for the PRD reviewer
     steps:

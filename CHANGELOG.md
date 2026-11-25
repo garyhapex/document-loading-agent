@@ -15,6 +15,7 @@ Newest entries at the top. Each entry records what was built or run, where, and 
 | 7 | Build relay, run 2; old kit deleted from Downloads; new kit downloaded; setup run again. | GitHub Actions + PC | Setup removed the broken service and installed DLA Invoice Relay PRD: Running, relay 1.3.0, settings from `C:\Program Files\DLA Relay PRD`, Database PRD, Token set, Watch C:\DLA\inbox, pdftoppm found. |
 | 8 | Six PDFs from `samples\invoices-gas-set2` copied into `C:\DLA\inbox`, no relay window open. | PRD + relay service | 4 Loaded (GAS2_01 to 04), 2 Needs review (GAS2_05 wrong total, GAS2_06 unknown vendor), 6 to 8 s each. |
 | 9 | Run 12 (build log only) went through approval and re-imported the same application. `deploy.yml`: CHANGELOG.md, README.md, docs/ and samples/ added to paths-ignore, so a push that changes only documents does not start the database pipeline. | repository | Committed. |
+| 10 | Every push to main still asked to deploy to production (run 13, a pipeline-only change, waited for approval with nothing to deploy). `deploy.yml`: a push to main now runs only the check job; the deploy job runs only for a published GitHub release (`on: release: published`, `if: github.event_name == 'release'`). README pipeline section updated. | repository | Committed. |
 
 ## 11/24/2026 (evening) - Pipeline target moved from DEV to PRD
 

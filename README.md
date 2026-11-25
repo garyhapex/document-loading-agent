@@ -112,19 +112,20 @@ To remove it: `Setup-DLA-Relay.cmd /uninstall`. Ollama itself still runs in the 
 
 ## Deployment pipeline (CI/CD)
 
-Every push to `main` starts `.github/workflows/deploy.yml` on GitHub:
+`.github/workflows/deploy.yml` on GitHub. A push to `main` runs step 3 only. Production is deployed only from a published GitHub release with a version number (v1.0, v1.1, ...), which runs steps 3 to 5:
 
 | Step | What happens | Who |
 |---|---|---|
 | 1 | Build and test on DEV | Developer |
 | 2 | Export application 300 into `apex/f300.sql`, commit, push | Developer |
-| 3 | Check: every db script has a header block; SQLcl logs in to PRD | GitHub, automatic |
+| 3 | Check: every db script has a header block; SQLcl logs in to PRD | GitHub, automatic, on every push and release |
+| - | Publish a release: version number and notes saying what goes to production | Developer, when there is something to release |
 | 4 | Wait for approval on the GitHub environment `PRD` (required reviewer) | Reviewer clicks Approve |
 | 5 | Deploy to PRD: Liquibase runs the install scripts in `db/deploy/changelog.xml` that are not yet in its ledger (re-runnable scripts rerun when their file changes); application 300 is imported from `apex/f300.sql`; the automation "Read waiting documents" is switched back on; `db/deploy/recompile.sql` recompiles any DLA object a table change left invalid; `db/deploy/verify.sql` checks for invalid objects, the application, the automation and the ledger | GitHub, automatic |
 
 Pushes that change only the relay, `CHANGELOG.md`, `README.md`, `docs/` or `samples/` do not start this pipeline (nothing in them is installed in the database).
 
-To release a new database script: add it to `db/`, add one `changeSet` for it at the bottom of `db/deploy/changelog.xml`, commit, push, approve.
+To release a new database script: add it to `db/`, add one `changeSet` for it at the bottom of `db/deploy/changelog.xml`, commit, push; then publish a release and approve it.
 
 The pipeline signs in with three repository secrets: `PRD_WALLET_BASE64`, `PRD_DB_USER`, `PRD_DB_PASSWORD`. The workspace name is set once at the top of `deploy.yml` (`APEX_WORKSPACE`) and passed to `apex_import.sql` and `verify.sql`. No secret is stored in any file. Liquibase keeps its ledger in the tables `DATABASECHANGELOG`, `DATABASECHANGELOGLOCK` and `DATABASECHANGELOG_ACTIONS` in the application schema.
 
