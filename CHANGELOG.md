@@ -2,6 +2,14 @@
 
 Newest entries at the top. Each entry records what was built or run, where, and the result.
 
+## 11/25/2026 (midday) - Review page and Compare Models tested on PRD
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Review Invoices, GAS2_05 (Chattahoochee CMR-11063, printed total 3,239.60, lines 3,039.60): Total changed to 3039.60, Save and check again, Approve and load. | PRD, application 300 | No problems after the correction; loaded. |
+| 2 | Review Invoices, GAS2_06 (Tallulah TCP-5588, unknown vendor): Add "Tallulah..." to vendors (adds the vendor and runs the checks again), Approve and load. | PRD, application 300 | Vendor added; no problems; loaded. Review list empty; set 2 now 6 of 6 loaded. First use of the Review page on PRD. |
+| 3 | Compare Models, GAS2_03_clean_pinecrest_odorant.pdf (document 9), Read with both models. First OCI Generative AI read on PRD (settings from DLA_13 by the pipeline, web credential credentials_for_ocigenai_1). | PRD, application 300 | Both Read OK. Local model qwen2.5vl:7b 12.3 s (first read of the day), OCI google.gemini-2.5-flash 6.5 s. All 9 compared fields Same; 3 lines each, identical. |
+
 ## 11/25/2026 (morning) - First release: v1.0.0 to PRD
 
 | Step | What | Where | Result |
