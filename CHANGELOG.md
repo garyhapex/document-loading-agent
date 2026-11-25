@@ -2,6 +2,15 @@
 
 Newest entries at the top. Each entry records what was built or run, where, and the result.
 
+## 11/24/2026 (evening) - Pipeline target moved from DEV to PRD
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | `db/utilities/DLA_20_PRD_CHECK.sql` (read-only) run on PRD as WKSP_WKSPPRDWORKSPACE. | PRD, SQL Developer | APEX 26.1.6; workspace PRD_WORKSPACE; no DLA objects, no Liquibase ledger; PKG_IMAGINARY_SPEC_READ VALID; ORDS enabled, path prd_workspace; credential credentials_for_ocigenai_1 present; applications 106, 200, 201 (300 free). |
+| 2 | `.github/workflows/deploy.yml`: secrets PRD_WALLET_BASE64 / PRD_DB_USER / PRD_DB_PASSWORD; environment `PRD`; first-run changelog-sync removed (PRD starts empty, every script runs); `APEX_WORKSPACE` passed to `apex_import.sql` and `verify.sql` as `&apex_workspace`. README environment table and pipeline section updated. | repository | Committed. |
+| 3 | Three repository secrets created: `PRD_WALLET_BASE64`, `PRD_DB_USER`, `PRD_DB_PASSWORD`. GitHub environment `PRD` created, required reviewer garyhapex. | GitHub | Saved. |
+| 4 | Run 6: first deploy to PRD. | GitHub Actions | (pending) |
+
 ## 11/24/2026 - CI/CD pipeline (GitHub Actions, approval, Liquibase, APEX import)
 
 | Step | What | Where | Result |

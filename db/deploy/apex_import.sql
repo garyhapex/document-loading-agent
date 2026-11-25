@@ -1,7 +1,7 @@
 /* ============================================================
    Script      : apex_import.sql
    Project     : Document Loading Agent (DLA) - CI/CD pipeline
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - run by the pipeline
+   Environment : PRD (GHAPEXAPPS_ATP_PRD) - run by the pipeline
    Changes     : YES - replaces APEX application 300 with the copy
                  in apex/f300.sql, then switches the automation
                  "Read waiting documents" back on.
@@ -15,10 +15,14 @@
    Re-runnable : yes
    Author      : Claude for Gary D. Hall
    Date        : 11/24/2026
+   Changed     : 11/24/2026 - the workspace is no longer written in
+                 here; the pipeline passes it as &apex_workspace
+                 (PRD_WORKSPACE on PRD).
    ============================================================ */
 
 WHENEVER SQLERROR EXIT FAILURE ROLLBACK
-SET DEFINE OFF
+SET DEFINE ON
+SET VERIFY OFF
 SET SERVEROUTPUT ON
 
 PROMPT ============================================================
@@ -27,16 +31,18 @@ PROMPT ============================================================
 
 /* ------------------------------------------------------------
    Block   : Where the application goes
-   Purpose : Same workspace, same application id, same schema as
-             the export, so every component keeps its id.
+   Purpose : Same application id and schema as the export, so
+             every component keeps its id. The workspace comes
+             from the pipeline (&apex_workspace).
    ------------------------------------------------------------ */
 BEGIN
-    apex_application_install.set_workspace('DEV_WORKSPACE');
+    apex_application_install.set_workspace('&apex_workspace');
     apex_application_install.set_application_id(300);
     apex_application_install.set_schema('WKSP_WKSPPRDWORKSPACE');
 END;
 /
 
+SET DEFINE OFF
 @apex/f300.sql
 
 /* ------------------------------------------------------------

@@ -1,12 +1,13 @@
 /* ============================================================
    Script      : verify.sql
    Project     : Document Loading Agent (DLA) - CI/CD pipeline
-   Environment : DEV (GHAPEXAPPS_ATP_DEV) - run by the pipeline
+   Environment : PRD (GHAPEXAPPS_ATP_PRD) - run by the pipeline
    Changes     : NO - read-only check
    Purpose     : Step 5 "verify". After the Liquibase update and
                  apex_import.sql have run:
                    1. every DLA object in the schema is VALID
-                   2. application 300 exists in DEV_WORKSPACE
+                   2. application 300 exists in the workspace the
+                      pipeline passes as &apex_workspace
                    3. automation "read-waiting-documents" is ACTIVE
                    4. the Liquibase ledger (DATABASECHANGELOG) holds
                       one row per changeSet in db/deploy/changelog.xml
@@ -18,9 +19,11 @@
    Author      : Claude for Gary D. Hall
    Date        : 11/24/2026
    Changed     : 11/24/2026 - check 4 added (Liquibase ledger)
+                 11/24/2026 - workspace passed in as &apex_workspace
    ============================================================ */
 
 WHENEVER SQLERROR EXIT FAILURE
+SET VERIFY OFF
 SET SERVEROUTPUT ON
 SET LINESIZE 200
 
@@ -67,10 +70,10 @@ BEGIN
     INTO   l_apps
     FROM   apex_applications a
     WHERE  a.application_id = 300
-    AND    a.workspace      = 'DEV_WORKSPACE';
+    AND    a.workspace      = '&apex_workspace';
 
     IF l_apps <> 1 THEN
-        RAISE_APPLICATION_ERROR(-20101, 'Application 300 not found in DEV_WORKSPACE after the import');
+        RAISE_APPLICATION_ERROR(-20101, 'Application 300 not found in &apex_workspace after the import');
     END IF;
 
     SELECT COUNT(*)

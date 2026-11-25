@@ -2,35 +2,45 @@
 # deploy.yml  -  the CI/CD pipeline for the Document Loading Agent
 #
 # What it does, in order (the numbers match the agreed list):
+#   1-2. The developer builds and tests on DEV by hand, exports
+#        the application to apex/f300.sql, commits and pushes.
 #   3. CHECK   runs by itself on every push to main:
 #              every db script has a header block, and SQLcl can
-#              log in to DEV with the three secrets.
-#   4. WAIT    the "deploy" job targets the GitHub environment DEV,
+#              log in to PRD with the three secrets.
+#   4. WAIT    the "deploy" job targets the GitHub environment PRD,
 #              which has a required reviewer; GitHub pauses here
 #              until that person clicks Approve.
 #   5. DEPLOY  Liquibase (inside SQLcl) runs the database scripts
 #              listed in db/deploy/changelog.xml that are not yet in
-#              its ledger, then db/deploy/apex_import.sql
-#              (application 300 from apex/f300.sql, automation
-#              re-enabled), then db/deploy/verify.sql. Any error
-#              fails the run.
+#              its ledger (on an empty PRD: all of them), then
+#              db/deploy/apex_import.sql (application 300 from
+#              apex/f300.sql, automation re-enabled), then
+#              db/deploy/verify.sql. Any error fails the run.
 #
 # Secrets (Settings -> Secrets and variables -> Actions):
-#   DEV_WALLET_BASE64  the DEV wallet zip as base64 text
-#   DEV_DB_USER        WKSP_WKSPPRDWORKSPACE
-#   DEV_DB_PASSWORD    that user's password
+#   PRD_WALLET_BASE64  the PRD wallet zip as base64 text
+#   PRD_DB_USER        WKSP_WKSPPRDWORKSPACE
+#   PRD_DB_PASSWORD    that user's password
 # GitHub blanks these out of every log. No secret is in any file.
 #
-# Environment : DEV (GHAPEXAPPS_ATP_DEV) only. Never PRD.
+# Environment : PRD (GHAPEXAPPS_ATP_PRD). DEV is never deployed to
+#               by the pipeline; DEV is where the work is done by hand.
 # Author      : Claude for Gary D. Hall, 11/24/2026
+# Changed     : 11/24/2026 - target moved from DEV (the proving run)
+#               to PRD. The first-run changelog-sync is gone: PRD
+#               starts empty, so every script must really run.
 # ============================================================
 
-name: Deploy to DEV
+name: Deploy to PRD
 
 # When to run: on every push to the main branch.
 on:
   push:
     branches: [main]
+
+# Values that are not secrets but differ per environment.
+env:
+  APEX_WORKSPACE: PRD_WORKSPACE   # where application 300 is installed
 
 jobs:
 
@@ -65,15 +75,15 @@ jobs:
         uses: gvenzl/setup-oracle-sqlcl@v1
 
       # Turn the wallet secret back into the zip file, in a temp folder.
-      - name: Write the DEV wallet
-        run: echo "${{ secrets.DEV_WALLET_BASE64 }}" | base64 -d > "$RUNNER_TEMP/wallet.zip"
+      - name: Write the PRD wallet
+        run: echo "${{ secrets.PRD_WALLET_BASE64 }}" | base64 -d > "$RUNNER_TEMP/wallet.zip"
 
-      # Log in to DEV and run one harmless query. If this fails,
+      # Log in to PRD and run one harmless query. If this fails,
       # a secret is wrong; nothing has been changed.
-      - name: SQLcl can log in to DEV
+      - name: SQLcl can log in to PRD
         env:
-          DB_USER: ${{ secrets.DEV_DB_USER }}
-          DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+          DB_USER: ${{ secrets.PRD_DB_USER }}
+          DB_PASSWORD: ${{ secrets.PRD_DB_PASSWORD }}
         run: |
           ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
           echo "Connecting with alias $ALIAS"
@@ -89,10 +99,10 @@ jobs:
   # Step 4 (the pause) and Step 5: DEPLOY and VERIFY
   # ---------------------------------------------------------
   deploy:
-    name: "5. Deploy to DEV and verify"
+    name: "5. Deploy to PRD and verify"
     needs: check                    # only after step 3 passed
     runs-on: ubuntu-latest
-    environment: DEV                # step 4: waits for the DEV reviewer
+    environment: PRD                # step 4: waits for the PRD reviewer
     steps:
 
       - name: Get the repository files
@@ -101,40 +111,23 @@ jobs:
       - name: Install SQLcl
         uses: gvenzl/setup-oracle-sqlcl@v1
 
-      - name: Write the DEV wallet
-        run: echo "${{ secrets.DEV_WALLET_BASE64 }}" | base64 -d > "$RUNNER_TEMP/wallet.zip"
+      - name: Write the PRD wallet
+        run: echo "${{ secrets.PRD_WALLET_BASE64 }}" | base64 -d > "$RUNNER_TEMP/wallet.zip"
 
-      # Liquibase: run only the install scripts that are not yet in the
+      # Liquibase: run the install scripts that are not yet in the
       # ledger (table DATABASECHANGELOG), plus re-runnable scripts whose
       # file changed. The list is db/deploy/changelog.xml.
-      # First run only: the ledger table does not exist yet, so every
-      # script on the list is recorded as already run (changelog-sync),
-      # because they were all run by hand before the pipeline existed.
-      - name: Liquibase update on DEV
+      # On the first PRD run the ledger does not exist: Liquibase
+      # creates it and runs all the scripts, in order.
+      - name: Liquibase update on PRD
         env:
-          DB_USER: ${{ secrets.DEV_DB_USER }}
-          DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+          DB_USER: ${{ secrets.PRD_DB_USER }}
+          DB_PASSWORD: ${{ secrets.PRD_DB_PASSWORD }}
         run: |
           ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
-          HAS_LEDGER=$(sql -S /nolog <<EOF | grep -Eo '^[[:space:]]*[01][[:space:]]*$' | tr -d '[:space:]'
-          set cloudconfig $RUNNER_TEMP/wallet.zip
-          connect $DB_USER/"$DB_PASSWORD"@$ALIAS
-          set heading off feedback off pagesize 0
-          select count(*) from user_tables where table_name = 'DATABASECHANGELOG';
-          exit
-          EOF
-          )
-          if [ -z "$HAS_LEDGER" ]; then echo "Could not read whether the ledger exists"; exit 1; fi
-          echo "Ledger table present: $HAS_LEDGER"
-          SYNC=""
-          if [ "$HAS_LEDGER" = "0" ]; then
-            echo "First run: recording the existing scripts as already run (changelog-sync)"
-            SYNC="lb changelog-sync -changelog-file db/deploy/changelog.xml"
-          fi
           sql -S /nolog <<EOF
           set cloudconfig $RUNNER_TEMP/wallet.zip
           connect $DB_USER/"$DB_PASSWORD"@$ALIAS
-          $SYNC
           lb update -changelog-file db/deploy/changelog.xml
           exit
           EOF
@@ -143,23 +136,24 @@ jobs:
       # automation back on (APEX disables automations on import).
       - name: Import application 300 from apex/f300.sql
         env:
-          DB_USER: ${{ secrets.DEV_DB_USER }}
-          DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+          DB_USER: ${{ secrets.PRD_DB_USER }}
+          DB_PASSWORD: ${{ secrets.PRD_DB_PASSWORD }}
         run: |
           ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
           sql -S /nolog <<EOF
           set cloudconfig $RUNNER_TEMP/wallet.zip
           connect $DB_USER/"$DB_PASSWORD"@$ALIAS
+          define apex_workspace = $APEX_WORKSPACE
           @db/deploy/apex_import.sql
           exit
           EOF
 
       # Verify: zero invalid DLA objects, application present,
       # automation ACTIVE, Liquibase ledger complete, or the run fails.
-      - name: Verify DEV
+      - name: Verify PRD
         env:
-          DB_USER: ${{ secrets.DEV_DB_USER }}
-          DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+          DB_USER: ${{ secrets.PRD_DB_USER }}
+          DB_PASSWORD: ${{ secrets.PRD_DB_PASSWORD }}
         run: |
           ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
           EXPECTED=$(grep -c '<changeSet ' db/deploy/changelog.xml)
@@ -167,6 +161,7 @@ jobs:
           set cloudconfig $RUNNER_TEMP/wallet.zip
           connect $DB_USER/"$DB_PASSWORD"@$ALIAS
           define expected_changesets = $EXPECTED
+          define apex_workspace = $APEX_WORKSPACE
           @db/deploy/verify.sql
           exit
           EOF

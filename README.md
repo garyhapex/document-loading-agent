@@ -43,9 +43,9 @@ Uses only features available on Oracle Database 19c with APEX 24.2: JSON_TABLE, 
 
 | Item | Value |
 |---|---|
-| Database | GHAPEXAPPS_ATP_DEV (Autonomous Database, OCI us-chicago-1) |
-| APEX workspace | DEV_WORKSPACE |
-| Schema | WKSP_WKSPPRDWORKSPACE |
+| Database | DEV: GHAPEXAPPS_ATP_DEV, where the work is done. PRD: GHAPEXAPPS_ATP_PRD, where the pipeline deploys. Both Autonomous Database, OCI us-chicago-1 |
+| APEX workspace | DEV_WORKSPACE on DEV, PRD_WORKSPACE on PRD |
+| Schema | WKSP_WKSPPRDWORKSPACE (same name on both) |
 | ORDS path | prd_workspace |
 | APEX application ID | 300 |
 | Object prefix | DLA_ |
@@ -106,19 +106,20 @@ Every push to `main` starts `.github/workflows/deploy.yml` on GitHub:
 |---|---|---|
 | 1 | Build and test on DEV | Developer |
 | 2 | Export application 300 into `apex/f300.sql`, commit, push | Developer |
-| 3 | Check: every db script has a header block; SQLcl logs in to DEV | GitHub, automatic |
-| 4 | Wait for approval on the GitHub environment `DEV` (required reviewer) | Reviewer clicks Approve |
-| 5 | Deploy: Liquibase runs the install scripts in `db/deploy/changelog.xml` that are not yet in its ledger (re-runnable scripts rerun when their file changes); application 300 is imported from `apex/f300.sql`; the automation "Read waiting documents" is switched back on; `db/deploy/verify.sql` checks for invalid objects, the application, the automation and the ledger | GitHub, automatic |
+| 3 | Check: every db script has a header block; SQLcl logs in to PRD | GitHub, automatic |
+| 4 | Wait for approval on the GitHub environment `PRD` (required reviewer) | Reviewer clicks Approve |
+| 5 | Deploy to PRD: Liquibase runs the install scripts in `db/deploy/changelog.xml` that are not yet in its ledger (re-runnable scripts rerun when their file changes); application 300 is imported from `apex/f300.sql`; the automation "Read waiting documents" is switched back on; `db/deploy/verify.sql` checks for invalid objects, the application, the automation and the ledger | GitHub, automatic |
 
 To release a new database script: add it to `db/`, add one `changeSet` for it at the bottom of `db/deploy/changelog.xml`, commit, push, approve.
 
-The pipeline signs in with three repository secrets: `DEV_WALLET_BASE64`, `DEV_DB_USER`, `DEV_DB_PASSWORD`. No secret is stored in any file. Liquibase keeps its ledger in the tables `DATABASECHANGELOG`, `DATABASECHANGELOGLOCK` and `DATABASECHANGELOG_ACTIONS` in the application schema.
+The pipeline signs in with three repository secrets: `PRD_WALLET_BASE64`, `PRD_DB_USER`, `PRD_DB_PASSWORD`. The workspace name is set once at the top of `deploy.yml` (`APEX_WORKSPACE`) and passed to `apex_import.sql` and `verify.sql`. No secret is stored in any file. Liquibase keeps its ledger in the tables `DATABASECHANGELOG`, `DATABASECHANGELOGLOCK` and `DATABASECHANGELOG_ACTIONS` in the application schema.
 
 ## Utilities
 
 | Script | Use |
 |---|---|
 | `db/utilities/DLA_00_INVENTORY.sql` | Lists what exists (read-only) |
+| `db/utilities/DLA_20_PRD_CHECK.sql` | What a target database already has before the pipeline is pointed at it (read-only) |
 | `db/relay/DLA_06_CHECK_EXTRACTIONS.sql`, `db/relay/DLA_09_PROCESS_STAGED.sql` | Show the latest reads and decisions (read-only) |
 | `db/utilities/DLA_12_REREAD_DOCUMENT.sql` | Takes listed documents back and queues them to be read again |
 | `db/utilities/DLA_14_REMOVE_OCI_ERROR_ROWS.sql` | Removes documents whose only read was an OCI error |
@@ -131,7 +132,7 @@ The pipeline signs in with three repository secrets: `DEV_WALLET_BASE64`, `DEV_D
 
 ## Status
 
-Working end to end on DEV. `CHANGELOG.md` records everything that was built and run, by date.
+Working end to end on DEV; the pipeline deploys to PRD. `CHANGELOG.md` records everything that was built and run, by date.
 
 | Phase | Scope | Status |
 |---|---|---|

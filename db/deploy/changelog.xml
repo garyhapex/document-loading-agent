@@ -2,7 +2,7 @@
 <!-- ============================================================
      changelog.xml  -  the Liquibase list of install scripts
      Project     : Document Loading Agent (DLA) - CI/CD pipeline
-     Environment : DEV (GHAPEXAPPS_ATP_DEV), run by the pipeline
+     Environment : PRD (GHAPEXAPPS_ATP_PRD), run by the pipeline
      Purpose     : Every install script, in install order. On each
                    deploy Liquibase runs only the scripts that are
                    not yet in its ledger (table DATABASECHANGELOG in
