@@ -13,6 +13,7 @@
 #   5. DEPLOY  Liquibase (inside SQLcl) runs the database scripts
 #              listed in db/deploy/changelog.xml that are not yet in
 #              its ledger (on an empty PRD: all of them), then
+#              db/deploy/recompile.sql (invalid DLA objects), then
 #              db/deploy/apex_import.sql (application 300 from
 #              apex/f300.sql, automation re-enabled), then
 #              db/deploy/verify.sql. Any error fails the run.
@@ -149,6 +150,22 @@ jobs:
               dbms_output.put_line('Ledger complete: ' || l_rows || ' of $EXPECTED');
           end;
           /
+          exit
+          EOF
+
+      # A table change marks the packages that use the table INVALID.
+      # Recompile every invalid DLA object now, so verify sees the
+      # true state (run 8: DLA_19 added columns, DLA_PKG went INVALID).
+      - name: Recompile invalid DLA objects
+        env:
+          DB_USER: ${{ secrets.PRD_DB_USER }}
+          DB_PASSWORD: ${{ secrets.PRD_DB_PASSWORD }}
+        run: |
+          ALIAS=$(unzip -p "$RUNNER_TEMP/wallet.zip" tnsnames.ora | grep -o '^[A-Za-z0-9_]*_low' | head -1)
+          sql -S /nolog <<EOF
+          set cloudconfig $RUNNER_TEMP/wallet.zip
+          connect $DB_USER/"$DB_PASSWORD"@$ALIAS
+          @db/deploy/recompile.sql
           exit
           EOF
 

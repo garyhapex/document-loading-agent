@@ -110,7 +110,7 @@ Every push to `main` starts `.github/workflows/deploy.yml` on GitHub:
 | 2 | Export application 300 into `apex/f300.sql`, commit, push | Developer |
 | 3 | Check: every db script has a header block; SQLcl logs in to PRD | GitHub, automatic |
 | 4 | Wait for approval on the GitHub environment `PRD` (required reviewer) | Reviewer clicks Approve |
-| 5 | Deploy to PRD: Liquibase runs the install scripts in `db/deploy/changelog.xml` that are not yet in its ledger (re-runnable scripts rerun when their file changes); application 300 is imported from `apex/f300.sql`; the automation "Read waiting documents" is switched back on; `db/deploy/verify.sql` checks for invalid objects, the application, the automation and the ledger | GitHub, automatic |
+| 5 | Deploy to PRD: Liquibase runs the install scripts in `db/deploy/changelog.xml` that are not yet in its ledger (re-runnable scripts rerun when their file changes); application 300 is imported from `apex/f300.sql`; the automation "Read waiting documents" is switched back on; `db/deploy/recompile.sql` recompiles any DLA object a table change left invalid; `db/deploy/verify.sql` checks for invalid objects, the application, the automation and the ledger | GitHub, automatic |
 
 To release a new database script: add it to `db/`, add one `changeSet` for it at the bottom of `db/deploy/changelog.xml`, commit, push, approve.
 
