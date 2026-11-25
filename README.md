@@ -66,6 +66,8 @@ Uses only features available on Oracle Database 19c with APEX 24.2: JSON_TABLE, 
 | `samples/invoices-gas/` | Fictional natural gas invoices: 2 clean, 4 with a planted problem |
 | `samples/invoices-gas-set2/` | Second set: 4 clean, 2 with a planted problem; made by `make_gas_set2_invoices.py` |
 | `docs/` | Demo script |
+| `.github/workflows/` | `deploy.yml`, the CI/CD pipeline (GitHub Actions) |
+| `db/deploy/` | Pipeline files: `changelog.xml` (Liquibase list of install scripts), `apex_import.sql`, `verify.sql` |
 
 ## Installing from scratch
 
@@ -96,6 +98,22 @@ node relay\dla-relay.js
 
 The relay creates the watched folder with `done` and `failed` inside it on first start.
 
+## Deployment pipeline (CI/CD)
+
+Every push to `main` starts `.github/workflows/deploy.yml` on GitHub:
+
+| Step | What happens | Who |
+|---|---|---|
+| 1 | Build and test on DEV | Developer |
+| 2 | Export application 300 into `apex/f300.sql`, commit, push | Developer |
+| 3 | Check: every db script has a header block; SQLcl logs in to DEV | GitHub, automatic |
+| 4 | Wait for approval on the GitHub environment `DEV` (required reviewer) | Reviewer clicks Approve |
+| 5 | Deploy: Liquibase runs the install scripts in `db/deploy/changelog.xml` that are not yet in its ledger (re-runnable scripts rerun when their file changes); application 300 is imported from `apex/f300.sql`; the automation "Read waiting documents" is switched back on; `db/deploy/verify.sql` checks for invalid objects, the application, the automation and the ledger | GitHub, automatic |
+
+To release a new database script: add it to `db/`, add one `changeSet` for it at the bottom of `db/deploy/changelog.xml`, commit, push, approve.
+
+The pipeline signs in with three repository secrets: `DEV_WALLET_BASE64`, `DEV_DB_USER`, `DEV_DB_PASSWORD`. No secret is stored in any file. Liquibase keeps its ledger in the tables `DATABASECHANGELOG`, `DATABASECHANGELOGLOCK` and `DATABASECHANGELOG_ACTIONS` in the application schema.
+
 ## Utilities
 
 | Script | Use |
@@ -121,3 +139,4 @@ Working end to end on DEV. `CHANGELOG.md` records everything that was built and 
 | 2 | AI extraction with both models, relay, upload page | Complete 11/20/2026 |
 | 3 | Checks, decision, review, approval and load | Complete 11/20/2026 |
 | 4 | Watched folder, compare page, dashboard, live updates, vendors page, demo script | Complete 11/21/2026 |
+| 5 | CI/CD pipeline: GitHub Actions, approval gate, Liquibase, APEX import, verify | Complete 11/24/2026 |

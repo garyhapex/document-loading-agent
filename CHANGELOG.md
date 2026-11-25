@@ -2,6 +2,28 @@
 
 Newest entries at the top. Each entry records what was built or run, where, and the result.
 
+## 11/24/2026 - CI/CD pipeline (GitHub Actions, approval, Liquibase, APEX import)
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Three repository secrets created: `DEV_WALLET_BASE64` (DEV wallet zip as base64), `DEV_DB_USER`, `DEV_DB_PASSWORD`. | GitHub, Settings → Secrets and variables → Actions | Saved. |
+| 2 | `.github/workflows/deploy.yml`: job "3. Check scripts and connection" (header block in every db script; SQLcl installed with `gvenzl/setup-oracle-sqlcl@v1`; log in to DEV with the wallet) and job "5. Deploy to DEV and verify" (needs the check, targets environment `DEV`). `db/deploy/release.sql` (first release: DLA_02) and `db/deploy/verify.sql` (0 invalid DLA objects). | repository | Committed. |
+| 3 | GitHub environment `DEV` created; required reviewer garyhapex; prevent self-review off. | GitHub, Settings → Environments | Saved. |
+| 4 | Run 1: pushed, check passed (1 min 14 s), approved, deploy ran release.sql and verify. | GitHub Actions | Passed. DLA_PKG compiled, no errors, VALID; 0 invalid DLA objects. |
+| 5 | `db/deploy/apex_import.sql`: imports application 300 into DEV_WORKSPACE from `apex/f300.sql`, then re-enables automation `read-waiting-documents` (APEX disables automations on import). New pipeline step runs it after the database scripts. `verify.sql` also checks application 300 exists and the automation is ACTIVE. Application exported (11/24 17:44). | repository | Committed. |
+| 6 | Run 2: approved and deployed. | GitHub Actions | Passed in 40 s. Import "COMPATIBLE", application 300 recreated; automation Active, last execution about a minute after the deploy (checked in Shared Components → Automations). |
+| 7 | `db/deploy/changelog.xml`: Liquibase list of the 12 install scripts in install order, each run through SQLcl (`runOracleScript`, source FILE); every script except DLA_01 has `runOnChange`. The release step in `deploy.yml` replaced by a Liquibase update; when the ledger table does not exist yet, `lb changelog-sync` first records the scripts as already run. `verify.sql`: ledger must hold one row per changeSet. `release.sql` removed. | repository | Committed. |
+| 8 | Run 3: approved and deployed. | GitHub Actions | Passed in 1 min 26 s. Ledger created; changelog-sync recorded 12; update: Run 0, Previously run 12, Total 12. Application import and verify passed (ledger 12 of 12). |
+
+## 11/23/2026 - Repository published
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | `CHANGELOG.md` rewritten as a plain build log; `README.md` rewritten (all scripts in install order, pages, relay setup). | repository | Committed. |
+| 2 | Python 3.14.10, Git for Windows 2.56.1 (winget) and git-filter-repo 2.47.0 (pip) installed. | PC | Installed. |
+| 3 | Git history rewritten with git-filter-repo: `docs/DLA_SESSION_HANDOFF.md` and `samples/invoices-gas/GAS_04_missing_date_kennesaw_ridge_locating.pdf` removed from every commit; pushed with `--force`. | PC and GitHub | 33 commits; neither file in any commit. |
+| 4 | Repository visibility changed to public. | GitHub, Settings | Public. |
+
 ## 11/22/2026 - Repository moved out of OneDrive; two old test scripts removed
 
 | Step | What | Where | Result |
