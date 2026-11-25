@@ -16,6 +16,11 @@
 # The built files never go into Git.
 #
 # Author : Claude for Gary D. Hall, 11/24/2026
+# Changed: 11/24/2026 - built on GitHub's Windows machine (as the
+#          Stick-IT relay is) and without V8 bytecode. Run 1 was built
+#          on Linux; on Windows the relay stopped at start with
+#          "V8 rejected the bytecode cache". The source is public in
+#          this repository anyway, so nothing is hidden by plain code.
 # ============================================================
 
 name: Build relay
@@ -31,7 +36,10 @@ on:
 jobs:
   build:
     name: "Build DLA-Relay-Setup"
-    runs-on: ubuntu-latest
+    runs-on: windows-latest         # the same kind of machine it runs on
+    defaults:
+      run:
+        shell: bash                 # Git Bash: curl, sha256sum, cp
     steps:
 
       - name: Get the repository files
@@ -47,7 +55,7 @@ jobs:
       - name: Build DLA-Relay.exe
         run: |
           mkdir -p kit
-          npx -y @yao-pkg/pkg@6.26.0 relay/dla-relay.js --targets node22-win-x64 --output kit/DLA-Relay.exe
+          npx -y @yao-pkg/pkg@6.26.0 relay/dla-relay.js --targets node22-win-x64 --no-bytecode --public-packages "*" --public --output kit/DLA-Relay.exe
           ls -l kit/DLA-Relay.exe
 
       # The service wrapper. The checksum must match the WinSW 2.12.0
