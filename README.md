@@ -112,7 +112,7 @@ To remove it: `Setup-DLA-Relay.cmd /uninstall`. Ollama itself still runs in the 
 
 ## Deployment pipeline (CI/CD)
 
-Day-to-day use, step by step with screenshots: [`docs/DLA_CICD_PIPELINE_DEVELOPER_GUIDE.md`](docs/DLA_CICD_PIPELINE_DEVELOPER_GUIDE.md).
+Day-to-day use, step by step with screenshots: [`docs/DLA_CICD_PIPELINE_DEVELOPER_GUIDE.md`](docs/DLA_CICD_PIPELINE_DEVELOPER_GUIDE.md). How the pipeline was built, to build it again elsewhere: [`docs/DLA_CICD_PIPELINE_SETUP_GUIDE.md`](docs/DLA_CICD_PIPELINE_SETUP_GUIDE.md).
 
 `.github/workflows/deploy.yml` on GitHub. A push to `main` runs step 3 only. Production is deployed only from a published GitHub release with a version number (v1.0, v1.1, ...), which runs steps 3 to 5:
 

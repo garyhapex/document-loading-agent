@@ -2,6 +2,12 @@
 
 Newest entries at the top. Each entry records what was built or run, where, and the result.
 
+## 11/25/2026 (late afternoon) - CI/CD Pipeline Setup Guide
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | `docs/DLA_CICD_PIPELINE_SETUP_GUIDE.md`: how the CI/CD pipeline was built (the pieces, checking the target database, wallet and secrets, the PRD environment, changelog.xml and the ledger, deploy.yml part by part, build-relay.yml, runs 1 to 9 and what they taught, a checklist for another project). Three more screenshots in `docs/images/` (secret names, PRD environment rules, deploy.yml triggers); none shows a secret value or a database address. README links to it. | repository | Written. |
+
 ## 11/25/2026 (late afternoon) - CI/CD Pipeline Developer Guide, README brought up to date
 
 | Step | What | Where | Result |
