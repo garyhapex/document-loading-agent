@@ -2,6 +2,21 @@
 
 Newest entries at the top. Each entry records what was built or run, where, and the result.
 
+## 11/25/2026 (late afternoon) - CI/CD Pipeline Developer Guide, README brought up to date
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | `docs/DLA_CICD_PIPELINE_DEVELOPER_GUIDE.md`: day-to-day use of the CI/CD pipeline (where things go, a database change, an APEX change, commit and push, the check, a release, approval, confirming on PRD, reading a failed run with runs 6 to 8, rollback). Nine screenshots in `docs/images/` (GitHub Actions, runs 15, 16 and 8, Releases, New release form, Compare Models on PRD); none shows a database address. | repository | Written. |
+| 2 | `README.md`: "Design limits" (19c / APEX 24.2) replaced by "Built on" (26ai, APEX 26.1); status shows release v1.0.0 and phase 6; demo notes Tallulah Inactive; link to the developer guide. | repository | Written. |
+
+## 11/25/2026 (afternoon) - DEV leftovers removed from GitHub
+
+| Step | What | Where | Result |
+|---|---|---|---|
+| 1 | Repository secrets DEV_DB_PASSWORD, DEV_DB_USER and DEV_WALLET_BASE64 deleted. Unused since the pipeline moved to PRD on 11/24 (deploy.yml references only PRD_ secrets and environment PRD). | GitHub, Settings > Secrets and variables > Actions | Left: PRD_DB_PASSWORD, PRD_DB_USER, PRD_WALLET_BASE64. |
+| 2 | GitHub environment DEV deleted (its approval rule only). The DEV database is not affected. | GitHub, Settings > Environments | Left: PRD, 1 protection rule. |
+| 3 | Demo rehearsal on PRD dropped: every page was run on PRD this week and the recorded demo video stands in for it. | - | Remaining-work list: all required items closed. |
+
 ## 11/25/2026 (afternoon) - Address out of the setup script, cleanup script, demo script for PRD
 
 | Step | What | Where | Result |

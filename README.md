@@ -35,9 +35,9 @@ The setting `WATCH_MODEL` chooses which model reads what arrives. Everything aft
 
 Shared components: automation "Read waiting documents" (every minute, reads documents waiting for the OCI model); page 0 holds the status badge colours and the live-update script.
 
-## Design limits
+## Built on
 
-Uses only features available on Oracle Database 19c with APEX 24.2: JSON_TABLE, APEX file upload, APEX_WEB_SERVICE, APEX Automations, ORDS. No vector search, no Human Task.
+Oracle Autonomous Database 26ai with APEX 26.1 (DEV and PRD). Uses JSON_TABLE, APEX file upload, APEX_WEB_SERVICE, APEX Automations and ORDS; no vector search, no Human Task.
 
 ## Environment
 
@@ -65,7 +65,7 @@ Uses only features available on Oracle Database 19c with APEX 24.2: JSON_TABLE, 
 | `samples/invoices/` | Fictional sample invoices, PDF and PNG |
 | `samples/invoices-gas/` | Fictional natural gas invoices: 2 clean, 4 with a planted problem |
 | `samples/invoices-gas-set2/` | Second set: 4 clean, 2 with a planted problem; made by `make_gas_set2_invoices.py` |
-| `docs/` | Demo script |
+| `docs/` | Demo script; CI/CD Pipeline Developer Guide and Setup Guide |
 | `.github/workflows/` | `deploy.yml`, the CI/CD pipeline (GitHub Actions) |
 | `db/deploy/` | Pipeline files: `changelog.xml` (Liquibase list of install scripts), `apex_import.sql`, `verify.sql` |
 
@@ -112,6 +112,8 @@ To remove it: `Setup-DLA-Relay.cmd /uninstall`. Ollama itself still runs in the 
 
 ## Deployment pipeline (CI/CD)
 
+Day-to-day use, step by step with screenshots: [`docs/DLA_CICD_PIPELINE_DEVELOPER_GUIDE.md`](docs/DLA_CICD_PIPELINE_DEVELOPER_GUIDE.md).
+
 `.github/workflows/deploy.yml` on GitHub. A push to `main` runs step 3 only. Production is deployed only from a published GitHub release with a version number (v1.0, v1.1, ...), which runs steps 3 to 5:
 
 | Step | What happens | Who |
@@ -143,11 +145,11 @@ The pipeline signs in with three repository secrets: `PRD_WALLET_BASE64`, `PRD_D
 
 ## Demo
 
-`docs/DLA_DEMO_SCRIPT.md` is the 3-minute demo. Short version: reset with DLA_15, copy the six PDFs from `samples/invoices-gas/` into the watched folder, and watch Upload Invoice fill in by itself: two load, four stop for a person.
+`docs/DLA_DEMO_SCRIPT.md` is the 3-minute demo, run on PRD. Short version: reset with DLA_15, make sure the vendor Tallulah is Inactive on the Vendors page, copy the six PDFs from `samples/invoices-gas/` into the watched folder, and watch Upload Invoice fill in by itself: two load, four stop for a person.
 
 ## Status
 
-Working end to end on DEV and on PRD (the pipeline deploys to PRD; the relay feeds PRD). `CHANGELOG.md` records everything that was built and run, by date.
+Working end to end on DEV and on PRD (the pipeline deploys to PRD; the relay feeds PRD as a Windows service). First release **v1.0.0** published and deployed to PRD on 11/25/2026. `CHANGELOG.md` records everything that was built and run, by date.
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -156,3 +158,4 @@ Working end to end on DEV and on PRD (the pipeline deploys to PRD; the relay fee
 | 3 | Checks, decision, review, approval and load | Complete 11/20/2026 |
 | 4 | Watched folder, compare page, dashboard, live updates, vendors page, demo script | Complete 11/21/2026 |
 | 5 | CI/CD pipeline: GitHub Actions, approval gate, Liquibase, APEX import, verify | Complete 11/24/2026 |
+| 6 | Release-only production deploys, first release v1.0.0, Review and Compare Models tested on PRD | Complete 11/25/2026 |
