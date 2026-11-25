@@ -40,12 +40,18 @@ name: Deploy to PRD
 on:
   push:
     branches: [main]
-    # The relay is built by build-relay.yml, not deployed to the
-    # database: a push that changes only these files does not start
-    # this pipeline.
+    # A push that changes ONLY files on this list does not start this
+    # pipeline: the relay (built by build-relay.yml, not deployed to
+    # the database) and documents (the build log, the README, docs and
+    # sample invoices), which are never installed anywhere. A push that
+    # also changes anything else still starts it.
     paths-ignore:
       - 'relay/**'
       - '.github/workflows/build-relay.yml'
+      - 'CHANGELOG.md'
+      - 'README.md'
+      - 'docs/**'
+      - 'samples/**'
 
 # Values that are not secrets but differ per environment.
 env:

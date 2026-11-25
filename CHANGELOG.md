@@ -14,6 +14,7 @@ Newest entries at the top. Each entry records what was built or run, where, and 
 | 6 | `build-relay.yml`: built on windows-latest (as the Stick-IT relay is) with `--no-bytecode --public-packages "*" --public`. Same settings first proven on a Linux build: banner shown, settings read from the program's own folder. | repository | Committed. |
 | 7 | Build relay, run 2; old kit deleted from Downloads; new kit downloaded; setup run again. | GitHub Actions + PC | Setup removed the broken service and installed DLA Invoice Relay PRD: Running, relay 1.3.0, settings from `C:\Program Files\DLA Relay PRD`, Database PRD, Token set, Watch C:\DLA\inbox, pdftoppm found. |
 | 8 | Six PDFs from `samples\invoices-gas-set2` copied into `C:\DLA\inbox`, no relay window open. | PRD + relay service | 4 Loaded (GAS2_01 to 04), 2 Needs review (GAS2_05 wrong total, GAS2_06 unknown vendor), 6 to 8 s each. |
+| 9 | Run 12 (build log only) went through approval and re-imported the same application. `deploy.yml`: CHANGELOG.md, README.md, docs/ and samples/ added to paths-ignore, so a push that changes only documents does not start the database pipeline. | repository | Committed. |
 
 ## 11/24/2026 (evening) - Pipeline target moved from DEV to PRD
 
